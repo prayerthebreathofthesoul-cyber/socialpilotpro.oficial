@@ -359,6 +359,17 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
           { id: 1, severity: "info", message: "Projeto em modo demonstração usando dados locais." },
           { id: 2, severity: "warning", message: "Conecte uma API real antes de vender o sistema." },
         ],
+        recentActivity: posts.slice(0, 3).map((post) => ({
+          id: post.id,
+          action:
+            post.status === "published"
+              ? "Post publicado"
+              : post.status === "scheduled"
+                ? "Post agendado"
+                : "Rascunho salvo",
+          postTitle: post.title,
+          timestamp: post.publishedAt || post.scheduledAt || post.createdAt,
+        })),
       };
     },
   });
