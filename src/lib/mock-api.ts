@@ -181,7 +181,7 @@ const defaultMedia: MediaFile[] = [
 const defaultStores: StoreRecord[] = [
   {
     id: 1,
-    name: "Sua Loja",
+    name: "Minha Empresa",
     segment: "Ferramentas e utilidades",
     cnpj: "",
     instagramConnected: true,
