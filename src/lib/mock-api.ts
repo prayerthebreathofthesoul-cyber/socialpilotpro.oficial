@@ -49,6 +49,19 @@ export interface StoreRecord {
   plan?: "free" | "premium";
 }
 
+export interface DashboardAlert {
+  id: number;
+  severity: "info" | "warning" | "error";
+  message: string;
+}
+
+export interface RecentActivity {
+  id: number;
+  action: string;
+  postTitle: string;
+  timestamp: string;
+}
+
 type QueryOptions = { query?: Record<string, unknown> } | undefined;
 
 const POSTS_KEY = "socialpilot_demo_posts";
@@ -72,13 +85,16 @@ const defaultPosts: Post[] = [
   {
     id: 1,
     title: "Oferta relâmpago de ferramentas",
-    caption: "Promoção especial por tempo limitado. Confira as melhores ferramentas para facilitar seu trabalho.",
+    caption:
+      "Promoção especial por tempo limitado. Confira as melhores ferramentas para facilitar seu trabalho.",
     hashtags: "#ferramentas #promoção #oferta",
     type: "feed",
     platforms: ["instagram", "facebook"],
     status: "scheduled",
-    mediaUrl: "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl: "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
     scheduledAt: nowPlus(1, 9),
     publishedAt: null,
     createdAt: nowMinus(3),
@@ -93,8 +109,10 @@ const defaultPosts: Post[] = [
     type: "story",
     platforms: ["instagram", "tiktok"],
     status: "draft",
-    mediaUrl: "https://images.unsplash.com/photo-1581147036324-c1c89c2c8b5c?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl: "https://images.unsplash.com/photo-1581147036324-c1c89c2c8b5c?auto=format&fit=crop&w=900&q=80",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1581147036324-c1c89c2c8b5c?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1581147036324-c1c89c2c8b5c?auto=format&fit=crop&w=900&q=80",
     scheduledAt: null,
     publishedAt: null,
     createdAt: nowMinus(1),
@@ -109,8 +127,10 @@ const defaultPosts: Post[] = [
     type: "feed",
     platforms: ["facebook"],
     status: "published",
-    mediaUrl: "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl: "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
     scheduledAt: null,
     publishedAt: nowMinus(2),
     createdAt: nowMinus(4),
@@ -124,8 +144,10 @@ const defaultMedia: MediaFile[] = [
     id: 1,
     name: "ferramentas-oferta.jpg",
     type: "image",
-    url: "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl: "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
+    url:
+      "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
     size: 850000,
     tags: "ferramentas, oferta",
     createdAt: nowMinus(5),
@@ -134,8 +156,10 @@ const defaultMedia: MediaFile[] = [
     id: 2,
     name: "loja-post.jpg",
     type: "image",
-    url: "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl: "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
+    url:
+      "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
     size: 620000,
     tags: "loja, divulgação",
     createdAt: nowMinus(2),
@@ -144,8 +168,10 @@ const defaultMedia: MediaFile[] = [
     id: 3,
     name: "video-demo.mp4",
     type: "video",
-    url: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=80",
+    url:
+      "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=80",
+    thumbnailUrl:
+      "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=80",
     size: 5400000,
     tags: "video, demonstração",
     createdAt: nowMinus(1),
@@ -167,12 +193,15 @@ const defaultStores: StoreRecord[] = [
 
 function readJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
+
   try {
     const raw = localStorage.getItem(key);
+
     if (!raw) {
       localStorage.setItem(key, JSON.stringify(fallback));
       return fallback;
     }
+
     return JSON.parse(raw) as T;
   } catch {
     return fallback;
@@ -183,6 +212,7 @@ function writeJson<T>(key: string, value: T): T {
   if (typeof window !== "undefined") {
     localStorage.setItem(key, JSON.stringify(value));
   }
+
   return value;
 }
 
@@ -236,6 +266,7 @@ export function useCreatePost() {
   return useMutation({
     mutationFn: async ({ data }: { data: Partial<Post> }) => {
       const posts = getPosts();
+
       const created: Post = {
         id: Math.max(0, ...posts.map((post) => post.id)) + 1,
         title: data.title || "Nova postagem",
@@ -247,12 +278,15 @@ export function useCreatePost() {
         mediaUrl: data.mediaUrl || null,
         thumbnailUrl: data.mediaUrl || null,
         scheduledAt: data.scheduledAt || null,
-        publishedAt: data.status === "published" ? new Date().toISOString() : null,
+        publishedAt:
+          data.status === "published" ? new Date().toISOString() : null,
         createdAt: new Date().toISOString(),
         engagement: 0,
         reach: 0,
       };
+
       setPosts([created, ...posts]);
+
       return created;
     },
   });
@@ -262,16 +296,22 @@ export function useUpdatePost() {
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Post> }) => {
       let updated: Post | null = null;
+
       const posts = getPosts().map((post) => {
         if (post.id !== id) return post;
+
         updated = {
           ...post,
           ...data,
-          thumbnailUrl: data.mediaUrl !== undefined ? data.mediaUrl : post.thumbnailUrl,
+          thumbnailUrl:
+            data.mediaUrl !== undefined ? data.mediaUrl : post.thumbnailUrl,
         } as Post;
+
         return updated;
       });
+
       setPosts(posts);
+
       return updated;
     },
   });
@@ -281,8 +321,10 @@ export function usePublishPost() {
   return useMutation({
     mutationFn: async ({ id }: { id: number }) => {
       let updated: Post | null = null;
+
       const posts = getPosts().map((post) => {
         if (post.id !== id) return post;
+
         updated = {
           ...post,
           status: "published",
@@ -291,9 +333,12 @@ export function usePublishPost() {
           engagement: post.engagement || 24,
           reach: post.reach || 540,
         };
+
         return updated;
       });
+
       setPosts(posts);
+
       return updated;
     },
   });
@@ -324,14 +369,25 @@ export function useListStores(_options?: QueryOptions) {
 
 export function useUpdateStore() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<StoreRecord> }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: Partial<StoreRecord>;
+    }) => {
       let updated: StoreRecord | null = null;
+
       const stores = getStores().map((store) => {
         if (store.id !== id) return store;
+
         updated = { ...store, ...data };
+
         return updated;
       });
+
       setStores(stores);
+
       return updated;
     },
   });
@@ -342,23 +398,50 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
     queryKey: getGetDashboardSummaryQueryKey(),
     queryFn: async () => {
       const posts = getPosts();
+
       const statusCounts = posts.reduce(
         (acc, post) => {
           acc[post.status] += 1;
           return acc;
         },
-        { scheduled: 0, draft: 0, published: 0, failed: 0 } as Record<PostStatus, number>,
+        {
+          scheduled: 0,
+          draft: 0,
+          published: 0,
+          failed: 0,
+        } as Record<PostStatus, number>
       );
+
+      const upcomingPosts = posts
+        .filter((post) => post.status === "scheduled" || post.status === "draft")
+        .slice(0, 4);
+
+      const alerts: DashboardAlert[] = [
+        {
+          id: 1,
+          severity: "info",
+          message:
+            "Bem-vindo ao painel. Aqui você acompanha seus posts, rascunhos e agendamentos.",
+        },
+      ];
+
+      const recentActivity: RecentActivity[] = posts.slice(0, 3).map((post) => ({
+        id: post.id,
+        action:
+          post.status === "published"
+            ? "Post publicado"
+            : post.status === "scheduled"
+              ? "Post agendado"
+              : "Rascunho criado",
+        postTitle: post.title,
+        timestamp: post.publishedAt || post.scheduledAt || post.createdAt,
+      }));
 
       return {
         statusCounts,
-        upcomingPosts: posts
-          .filter((post) => post.status === "scheduled" || post.status === "draft")
-          .slice(0, 4),
-        alerts: [
-          { id: 1, severity: "info", message: "Projeto em modo demonstração usando dados locais." },
-          { id: 2, severity: "warning", message: "Conecte uma API real antes de vender o sistema." },
-        ],
+        upcomingPosts,
+        alerts,
+        recentActivity,
       };
     },
   });
@@ -369,13 +452,24 @@ export function useGetAnalyticsOverview(_options?: QueryOptions) {
     queryKey: getGetAnalyticsOverviewQueryKey(),
     queryFn: async () => {
       const posts = getPosts();
-      const totalEngagement = posts.reduce((sum, post) => sum + (post.engagement || 0), 0);
-      const totalReach = posts.reduce((sum, post) => sum + (post.reach || 0), 0);
+
+      const totalEngagement = posts.reduce(
+        (sum, post) => sum + (post.engagement || 0),
+        0
+      );
+
+      const totalReach = posts.reduce(
+        (sum, post) => sum + (post.reach || 0),
+        0
+      );
+
       return {
         totalPosts: posts.length,
         totalEngagement,
         totalReach,
-        avgEngagementRate: totalReach ? (totalEngagement / totalReach) * 100 : 0,
+        avgEngagementRate: totalReach
+          ? (totalEngagement / totalReach) * 100
+          : 0,
         weeklyEngagement: [
           { day: "Seg", engagement: 80, reach: 900 },
           { day: "Ter", engagement: 120, reach: 1200 },
@@ -386,9 +480,26 @@ export function useGetAnalyticsOverview(_options?: QueryOptions) {
           { day: "Dom", engagement: 130, reach: 1400 },
         ],
         platformBreakdown: [
-          { platform: "Instagram", posts: posts.filter((p) => p.platforms.includes("instagram")).length, engagement: 220 },
-          { platform: "Facebook", posts: posts.filter((p) => p.platforms.includes("facebook")).length, engagement: 160 },
-          { platform: "TikTok", posts: posts.filter((p) => p.platforms.includes("tiktok")).length, engagement: 300 },
+          {
+            platform: "Instagram",
+            posts: posts.filter((post) =>
+              post.platforms.includes("instagram")
+            ).length,
+            engagement: 220,
+          },
+          {
+            platform: "Facebook",
+            posts: posts.filter((post) =>
+              post.platforms.includes("facebook")
+            ).length,
+            engagement: 160,
+          },
+          {
+            platform: "TikTok",
+            posts: posts.filter((post) => post.platforms.includes("tiktok"))
+              .length,
+            engagement: 300,
+          },
         ],
         bestPostingHours: [
           { hour: 9, engagementScore: 82 },
