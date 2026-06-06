@@ -2,7 +2,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Post } from "@workspace/api-client-react";
+import { Post } from "@/lib/mock-api";
 import { PostStatusBadge, PlatformIcon, PostTypeBadge } from "./PostStatusBadge";
 import { Calendar, Clock, BarChart2, MoreHorizontal, Edit, Trash2 } from "lucide-react";
 import { Link } from "wouter";

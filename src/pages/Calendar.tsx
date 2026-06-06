@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, CalendarDays } from "lucide-react";
-import { useListPosts, getListPostsQueryKey } from "@workspace/api-client-react";
+import { useListPosts, getListPostsQueryKey } from "@/lib/mock-api";
 import { format, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 

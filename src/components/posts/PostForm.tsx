@@ -28,7 +28,7 @@ import {
   type PostUpdatePlatformsItem,
   type PostUpdateStatus,
   type PostUpdateType,
-} from "@workspace/api-client-react";
+} from "@/lib/mock-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, Image as ImageIcon, Instagram, Facebook } from "lucide-react";

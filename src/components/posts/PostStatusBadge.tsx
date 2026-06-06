@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { PostStatus, PostType } from "@workspace/api-client-react";
+import { PostStatus, PostType } from "@/lib/mock-api";
 import { Instagram, Facebook, Share2 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 

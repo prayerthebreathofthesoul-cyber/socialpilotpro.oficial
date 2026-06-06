@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Upload, Image as ImageIcon, Video, FolderOpen, Filter, Trash2 } from "lucide-react";
-import { useListMedia, getListMediaQueryKey, useDeleteMedia } from "@workspace/api-client-react";
+import { useListMedia, getListMediaQueryKey, useDeleteMedia } from "@/lib/mock-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";

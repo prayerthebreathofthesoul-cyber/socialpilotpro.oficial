@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { useGetDashboardSummary, getGetDashboardSummaryQueryKey } from "@workspace/api-client-react";
+import { useGetDashboardSummary, getGetDashboardSummaryQueryKey } from "@/lib/mock-api";
 import { CalendarClock, FileEdit, CheckCircle2, AlertCircle, Plus, ArrowRight } from "lucide-react";
 import { PostCard } from "@/components/posts/PostCard";
 import { Skeleton } from "@/components/ui/skeleton";

@@ -46,6 +46,7 @@ export interface StoreRecord {
   instagramConnected?: boolean;
   facebookConnected?: boolean;
   tiktokConnected?: boolean;
+  plan?: "free" | "premium";
 }
 
 type QueryOptions = { query?: Record<string, unknown> } | undefined;
@@ -160,6 +161,7 @@ const defaultStores: StoreRecord[] = [
     instagramConnected: true,
     facebookConnected: false,
     tiktokConnected: false,
+    plan: "free",
   },
 ];
 

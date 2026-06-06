@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Store, Mail, Instagram, Facebook, Bell, Key, CreditCard, Shield, Rocket } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
-import { useListStores, getListStoresQueryKey, useUpdateStore } from "@workspace/api-client-react";
+import { useListStores, getListStoresQueryKey, useUpdateStore } from "@/lib/mock-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";

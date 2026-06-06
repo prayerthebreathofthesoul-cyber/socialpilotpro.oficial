@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { PostForm } from "@/components/posts/PostForm";
-import { useGetPost, getGetPostQueryKey } from "@workspace/api-client-react";
+import { useGetPost, getGetPostQueryKey } from "@/lib/mock-api";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function EditPost() {
