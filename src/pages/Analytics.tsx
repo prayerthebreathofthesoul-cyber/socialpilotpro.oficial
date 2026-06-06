@@ -111,7 +111,7 @@ export default function Analytics() {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={analytics?.platformBreakdown || []} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                      <XAxis dataKey="platform" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} dy={10} />
+                      <XAxis dataKey="platform" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280', textTransform: 'capitalize' }} dy={10} />
                       <YAxis yAxisId="left" orientation="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
                       <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
                       <RechartsTooltip 

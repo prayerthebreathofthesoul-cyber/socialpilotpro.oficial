@@ -7,8 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function EditPost() {
   const [, setLocation] = useLocation();
-  const params = useParams<{ id?: string }>();
-  const id = params.id ? Number.parseInt(params.id, 10) : 0;
+  const params = useParams();
+  const id = params.id ? parseInt(params.id, 10) : 0;
 
   const { data: post, isLoading, isError } = useGetPost(id, {
     query: {
