@@ -1,15 +1,28 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { setAuthToken } from "@/lib/auth";
-import { Link } from "wouter";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
 
 const loginSchema = z.object({
@@ -29,15 +42,15 @@ export default function Login() {
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof loginSchema>) => {
+  const onSubmit = async () => {
     setIsLoading(true);
-    // Simulate API call
+
     setTimeout(() => {
       setAuthToken("fake_token_123");
       toast.success("Login realizado com sucesso");
       setLocation("/dashboard");
       setIsLoading(false);
-    }, 1000);
+    }, 800);
   };
 
   return (
@@ -45,13 +58,20 @@ export default function Login() {
       <Card className="w-full max-w-md shadow-lg border-primary/10">
         <CardHeader className="space-y-1 text-center">
           <div className="w-12 h-12 bg-primary rounded-lg mx-auto mb-4 flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-xl">SP</span>
+            <span className="text-primary-foreground font-bold text-xl">
+              SP
+            </span>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">Bem-vindo de volta</CardTitle>
+
+          <CardTitle className="text-2xl font-bold tracking-tight">
+            Bem-vindo de volta
+          </CardTitle>
+
           <CardDescription>
-            Entre na sua conta SocialPilot Mini
+            Entre na sua conta SocialPilot Pro
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -60,14 +80,20 @@ export default function Login() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>E-mail</FormLabel>
                     <FormControl>
-                      <Input placeholder="seu@email.com" type="text" {...field} />
+                      <Input
+                        placeholder="seu@email.com"
+                        type="text"
+                        autoComplete="email"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <FormField
                 control={form.control}
                 name="password"
@@ -75,27 +101,53 @@ export default function Login() {
                   <FormItem>
                     <div className="flex items-center justify-between">
                       <FormLabel>Senha</FormLabel>
-                      <Link href="#" className="text-sm font-medium text-primary hover:underline">
+
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-primary hover:underline"
+                        onClick={() =>
+                          toast.info(
+                            "A recuperação de senha será configurada na versão com login real."
+                          )
+                        }
+                      >
                         Esqueci minha senha
-                      </Link>
+                      </button>
                     </div>
+
                     <FormControl>
-                      <Input placeholder="******" type="password" {...field} />
+                      <Input
+                        placeholder="******"
+                        type="password"
+                        autoComplete="current-password"
+                        {...field}
+                      />
                     </FormControl>
+
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
               <Button type="submit" className="w-full mt-6" disabled={isLoading}>
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Entrar"}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Entrando...
+                  </>
+                ) : (
+                  "Entrar"
+                )}
               </Button>
             </form>
           </Form>
         </CardContent>
+
         <CardFooter className="flex flex-col gap-4 items-center justify-center border-t p-6">
           <div className="text-sm text-muted-foreground text-center">
             Ainda não tem uma conta?
           </div>
+
           <Button variant="outline" className="w-full" asChild>
             <Link href="/register">Cadastrar-se</Link>
           </Button>
