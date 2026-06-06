@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { PostForm } from "@/components/posts/PostForm";
@@ -7,14 +6,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function EditPost() {
   const [, setLocation] = useLocation();
-  const params = useParams();
-  const id = params.id ? parseInt(params.id, 10) : 0;
+
+  const params = useParams() as { id?: string };
+  const id = params.id ? Number.parseInt(params.id, 10) : 0;
 
   const { data: post, isLoading, isError } = useGetPost(id, {
     query: {
-      enabled: !!id,
-      queryKey: getGetPostQueryKey(id)
-    }
+      enabled: Number.isFinite(id) && id > 0,
+      queryKey: getGetPostQueryKey(id),
+    },
   });
 
   const handleSuccess = () => {
@@ -51,11 +51,19 @@ export default function EditPost() {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Editar Postagem</h1>
-          <p className="text-muted-foreground mt-1">Faça alterações no conteúdo ou agendamento.</p>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Editar Postagem
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Faça alterações no conteúdo ou agendamento.
+          </p>
         </div>
-        
-        <PostForm initialData={post} onSuccess={handleSuccess} onCancel={handleCancel} />
+
+        <PostForm
+          initialData={post}
+          onSuccess={handleSuccess}
+          onCancel={handleCancel}
+        />
       </div>
     </Layout>
   );
