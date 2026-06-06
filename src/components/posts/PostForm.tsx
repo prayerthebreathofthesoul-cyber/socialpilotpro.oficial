@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,13 @@ import {
 } from "@/lib/mock-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Image as ImageIcon, Instagram, Facebook } from "lucide-react";
+import {
+  Loader2,
+  Image as ImageIcon,
+  Instagram,
+  Facebook,
+  Upload,
+} from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 
 const platformSchema = z.enum(["instagram", "facebook", "tiktok"]);
@@ -41,8 +48,10 @@ const formSchema = z.object({
   caption: z.string().optional(),
   hashtags: z.string().optional(),
   type: z.enum(["feed", "story"]),
-  platforms: z.array(platformSchema).min(1, "Selecione pelo menos uma plataforma"),
-  mediaUrl: z.string().url("URL de mídia inválida").optional().or(z.literal("")),
+  platforms: z
+    .array(platformSchema)
+    .min(1, "Selecione pelo menos uma plataforma"),
+  mediaUrl: z.string().optional().or(z.literal("")),
   scheduledAt: z.string().optional(),
 });
 
@@ -58,6 +67,7 @@ interface PostFormProps {
 
 export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isEditing = Boolean(initialData);
 
   const createPost = useCreatePost();
@@ -71,7 +81,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       caption: initialData?.caption || "",
       hashtags: initialData?.hashtags || "",
       type: (initialData?.type as FormValues["type"]) || "feed",
-      platforms: (initialData?.platforms as Platform[] | undefined) || ["instagram"],
+      platforms:
+        (initialData?.platforms as Platform[] | undefined) || ["instagram"],
       mediaUrl: initialData?.mediaUrl || "",
       scheduledAt: initialData?.scheduledAt
         ? new Date(initialData.scheduledAt).toISOString().slice(0, 16)
@@ -85,10 +96,50 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     currentValue: Platform[] = []
   ) => {
     if (checked === true) {
-      return currentValue.includes(platform) ? currentValue : [...currentValue, platform];
+      return currentValue.includes(platform)
+        ? currentValue
+        : [...currentValue, platform];
     }
 
     return currentValue.filter((item) => item !== platform);
+  };
+
+  const handleMediaFileChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione um arquivo de imagem.");
+      return;
+    }
+
+    const maxSizeInMB = 5;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (file.size > maxSizeInBytes) {
+      toast.error(`A imagem precisa ter no máximo ${maxSizeInMB}MB.`);
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const imageDataUrl = String(reader.result || "");
+      form.setValue("mediaUrl", imageDataUrl, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      toast.success("Imagem adicionada ao post.");
+    };
+
+    reader.onerror = () => {
+      toast.error("Não foi possível carregar a imagem.");
+    };
+
+    reader.readAsDataURL(file);
   };
 
   const buildBasePayload = (values: FormValues) => ({
@@ -98,13 +149,16 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     type: values.type as PostInputType,
     platforms: values.platforms as PostInputPlatformsItem[],
     mediaUrl: values.mediaUrl || null,
-    scheduledAt: values.scheduledAt ? new Date(values.scheduledAt).toISOString() : null,
+    scheduledAt: values.scheduledAt
+      ? new Date(values.scheduledAt).toISOString()
+      : null,
   });
 
   const onSubmit = async (values: FormValues, action: SaveAction) => {
     try {
       const basePayload = buildBasePayload(values);
-      const status: PostInputStatus = action === "schedule" ? "scheduled" : "draft";
+      const status: PostInputStatus =
+        action === "schedule" ? "scheduled" : "draft";
 
       if (isEditing && initialData) {
         await updatePost.mutateAsync({
@@ -112,7 +166,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           data: {
             ...basePayload,
             type: basePayload.type as PostUpdateType,
-            platforms: basePayload.platforms as unknown as PostUpdatePlatformsItem[],
+            platforms:
+              basePayload.platforms as unknown as PostUpdatePlatformsItem[],
             status: status as PostUpdateStatus,
           },
         });
@@ -151,8 +206,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
   };
 
-  const isPending = createPost.isPending || updatePost.isPending || publishPost.isPending;
+  const isPending =
+    createPost.isPending || updatePost.isPending || publishPost.isPending;
+
   const hasScheduleDate = Boolean(form.watch("scheduledAt"));
+  const mediaPreview = form.watch("mediaUrl");
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -168,7 +226,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     <FormItem className="space-y-3">
                       <FormLabel>Tipo de Postagem</FormLabel>
                       <FormControl>
-                        <Tabs value={field.value} onValueChange={field.onChange}>
+                        <Tabs
+                          value={field.value}
+                          onValueChange={field.onChange}
+                        >
                           <TabsList className="grid w-full grid-cols-2">
                             <TabsTrigger value="feed">Feed</TabsTrigger>
                             <TabsTrigger value="story">Story</TabsTrigger>
@@ -193,7 +254,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             checked={field.value?.includes("instagram")}
                             onCheckedChange={(checked) =>
                               field.onChange(
-                                handlePlatformChange(checked, "instagram", field.value || [])
+                                handlePlatformChange(
+                                  checked,
+                                  "instagram",
+                                  field.value || []
+                                )
                               )
                             }
                           />
@@ -208,7 +273,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             checked={field.value?.includes("facebook")}
                             onCheckedChange={(checked) =>
                               field.onChange(
-                                handlePlatformChange(checked, "facebook", field.value || [])
+                                handlePlatformChange(
+                                  checked,
+                                  "facebook",
+                                  field.value || []
+                                )
                               )
                             }
                           />
@@ -223,7 +292,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             checked={field.value?.includes("tiktok")}
                             onCheckedChange={(checked) =>
                               field.onChange(
-                                handlePlatformChange(checked, "tiktok", field.value || [])
+                                handlePlatformChange(
+                                  checked,
+                                  "tiktok",
+                                  field.value || []
+                                )
                               )
                             }
                           />
@@ -246,9 +319,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     <FormItem>
                       <FormLabel>Título Interno</FormLabel>
                       <FormControl>
-                        <Input placeholder="Ex: Lançamento Coleção Verão" {...field} />
+                        <Input
+                          placeholder="Ex: Furadeira em promoção"
+                          {...field}
+                        />
                       </FormControl>
-                      <FormDescription>Usado apenas para identificação no sistema.</FormDescription>
+                      <FormDescription>
+                        Usado apenas para identificação no sistema.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -259,24 +337,39 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   name="mediaUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>URL da Mídia</FormLabel>
-                      <div className="flex gap-2">
+                      <FormLabel>Imagem ou URL da Mídia</FormLabel>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
                         <FormControl>
-                          <Input placeholder="https://..." {...field} />
+                          <Input
+                            placeholder="Cole uma URL direta de imagem ou escolha uma imagem do computador"
+                            {...field}
+                          />
                         </FormControl>
+
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleMediaFileChange}
+                        />
 
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() =>
-                            toast.info("Na versão real, isso abriria a biblioteca de mídia.")
-                          }
+                          onClick={() => fileInputRef.current?.click()}
                         >
-                          <ImageIcon className="w-4 h-4 mr-2" />
-                          Biblioteca
+                          <Upload className="w-4 h-4 mr-2" />
+                          Escolher Imagem
                         </Button>
                       </div>
-                      <FormDescription>Cole aqui o link de uma imagem ou vídeo.</FormDescription>
+
+                      <FormDescription>
+                        Você pode colar uma URL direta de imagem ou selecionar
+                        uma imagem do seu computador.
+                      </FormDescription>
+
                       <FormMessage />
                     </FormItem>
                   )}
@@ -307,7 +400,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     <FormItem>
                       <FormLabel>Hashtags</FormLabel>
                       <FormControl>
-                        <Input placeholder="#promoção #novidade #oferta" {...field} />
+                        <Input
+                          placeholder="#promoção #novidade #oferta"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -324,8 +420,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         <Input type="datetime-local" {...field} />
                       </FormControl>
                       <FormDescription>
-                        Preencha para agendar. Deixe em branco para salvar como rascunho
-                        ou publicar agora.
+                        Preencha para agendar. Deixe em branco para salvar como
+                        rascunho ou publicar agora.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -352,7 +448,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 )}
                 disabled={isPending}
               >
-                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 {hasScheduleDate ? "Agendar Postagem" : "Publicar Agora"}
               </Button>
 
@@ -385,19 +483,22 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
               <div className="border rounded-md overflow-hidden bg-background">
                 <div className="p-3 flex items-center gap-2 border-b">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                    SL
+                    ME
                   </div>
-                  <span className="font-medium text-sm">Sua Loja</span>
+                  <span className="font-medium text-sm">Minha Empresa</span>
                 </div>
 
-                {form.watch("mediaUrl") ? (
+                {mediaPreview ? (
                   <div className="aspect-square bg-muted">
                     <img
-                      src={form.watch("mediaUrl")}
+                      src={mediaPreview}
                       className="w-full h-full object-cover"
-                      alt="Preview"
+                      alt="Preview da mídia"
                       onError={(event) => {
                         event.currentTarget.style.display = "none";
+                        toast.error(
+                          "Não foi possível carregar essa imagem. Use uma URL direta ou escolha uma imagem do computador."
+                        );
                       }}
                     />
                   </div>
@@ -412,7 +513,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   <p className="line-clamp-3 whitespace-pre-wrap">
                     {form.watch("caption") || "Sua legenda aparecerá aqui..."}
                   </p>
-                  <p className="text-blue-600 mt-1">{form.watch("hashtags")}</p>
+                  <p className="text-blue-600 mt-1">
+                    {form.watch("hashtags")}
+                  </p>
                 </div>
               </div>
             </div>
