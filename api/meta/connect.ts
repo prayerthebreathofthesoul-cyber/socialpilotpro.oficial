@@ -29,6 +29,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     authUrl.searchParams.set("scope", scopes);
     authUrl.searchParams.set("response_type", "code");
 
+    // Força a Meta a pedir novamente as permissões e seleção de páginas
+    authUrl.searchParams.set("auth_type", "rerequest");
+
     return res.redirect(authUrl.toString());
   } catch (error) {
     console.error("Erro ao iniciar conexão com a Meta:", error);
