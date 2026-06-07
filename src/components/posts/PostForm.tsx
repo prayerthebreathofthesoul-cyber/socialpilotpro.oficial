@@ -253,6 +253,22 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     return result;
   };
 
+  const getPublishedPostUrl = (publishResult: any) => {
+    const instagramUrl = publishResult?.postUrls?.instagram;
+    const facebookUrl = publishResult?.postUrls?.facebook;
+
+    if (instagramUrl) return instagramUrl;
+    if (facebookUrl) return facebookUrl;
+
+    const instagramResultUrl = publishResult?.results?.instagram?.url;
+    const facebookResultUrl = publishResult?.results?.facebook?.url;
+
+    if (instagramResultUrl) return instagramResultUrl;
+    if (facebookResultUrl) return facebookResultUrl;
+
+    return null;
+  };
+
   const onSubmit = async (values: FormValues, action: SaveAction) => {
     setIsPending(true);
 
@@ -310,18 +326,48 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       }
 
       if (action === "publish-now") {
-        toast.info("Enviando publicação para Facebook/Instagram...");
+        const loadingToast = toast.loading(
+          "Enviando publicação para Facebook/Instagram..."
+        );
 
-        await publishPostNow(savedPostId);
+        const publishResult = await publishPostNow(savedPostId);
 
-        toast.success("Post publicado com sucesso nas redes conectadas.");
+        toast.dismiss(loadingToast);
+
+        const postUrl = getPublishedPostUrl(publishResult);
+
+        toast.success("Publicação feita com sucesso!", {
+          description: postUrl
+            ? "Clique em Ver post para abrir a publicação."
+            : "Seu post foi enviado para as redes sociais conectadas.",
+          duration: 7000,
+          action: postUrl
+            ? {
+                label: "Ver post",
+                onClick: () => {
+                  window.open(postUrl, "_blank", "noopener,noreferrer");
+                },
+              }
+            : undefined,
+        });
+
+        setTimeout(() => {
+          onSuccess();
+        }, 2000);
+
+        return;
       } else if (action === "schedule") {
-        toast.success("Postagem agendada com sucesso.");
+        toast.success("Postagem agendada com sucesso.", {
+          duration: 3500,
+        });
       } else {
         toast.success(
           isEditing
             ? "Rascunho atualizado com sucesso."
-            : "Rascunho salvo com sucesso."
+            : "Rascunho salvo com sucesso.",
+          {
+            duration: 3500,
+          }
         );
       }
 
