@@ -129,6 +129,49 @@ function isPublicHttpsUrl(url: string) {
   return /^https:\/\/.+/i.test(url);
 }
 
+function buildFacebookPostUrl(resultData: any) {
+  const postId = resultData?.post_id;
+  const photoId = resultData?.id;
+
+  if (postId) {
+    return `https://www.facebook.com/${postId}`;
+  }
+
+  if (photoId) {
+    return `https://www.facebook.com/photo.php?fbid=${photoId}`;
+  }
+
+  return null;
+}
+
+async function getInstagramPermalink(params: {
+  mediaId: string;
+  accessToken: string;
+}) {
+  const { mediaId, accessToken } = params;
+
+  const url = new URL(`https://graph.facebook.com/v20.0/${mediaId}`);
+
+  url.searchParams.set("fields", "permalink");
+  url.searchParams.set("access_token", accessToken);
+
+  const result = await requestJson(url.toString(), {
+    method: "GET",
+  });
+
+  if (!result.ok) {
+    console.error(
+      "Erro ao buscar permalink do Instagram:",
+      result.status,
+      result.text
+    );
+
+    return null;
+  }
+
+  return result.data?.permalink || null;
+}
+
 async function updatePostStatus(params: {
   supabaseUrl: string;
   headers: Record<string, string>;
@@ -211,7 +254,9 @@ async function publishToInstagramFeed(params: {
     return {
       ok: false,
       step: "create_container",
+      creationId: null,
       result: containerResult,
+      permalink: null,
     };
   }
 
@@ -228,11 +273,21 @@ async function publishToInstagramFeed(params: {
     method: "POST",
   });
 
+  let permalink: string | null = null;
+
+  if (publishResult.ok && publishResult.data?.id) {
+    permalink = await getInstagramPermalink({
+      mediaId: publishResult.data.id,
+      accessToken: pageAccessToken,
+    });
+  }
+
   return {
     ok: publishResult.ok && Boolean(publishResult.data?.id),
     step: "publish_container",
     creationId,
     result: publishResult,
+    permalink,
   };
 }
 
@@ -282,6 +337,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!postResult.ok) {
       console.error("Erro ao buscar post:", postResult.status, postResult.text);
+
       return res.status(500).json({
         error: "Erro ao buscar post.",
         details: postResult.text,
@@ -394,6 +450,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       platforms.length > 0 ? platforms : ["facebook", "instagram"];
 
     const results: Record<string, any> = {};
+    const postUrls: Record<string, string | null> = {};
 
     if (selectedPlatforms.includes("facebook")) {
       console.log("Publicando no Facebook:", facebookAccount.page_id);
@@ -405,11 +462,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         caption,
       });
 
+      const facebookPostUrl = buildFacebookPostUrl(facebookResult.data);
+
+      postUrls.facebook = facebookPostUrl;
+
       results.facebook = {
         ok: facebookResult.ok,
         status: facebookResult.status,
         data: facebookResult.data,
         text: facebookResult.text,
+        url: facebookPostUrl,
       };
     }
 
@@ -419,9 +481,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         facebookAccount?.instagram_business_account_id;
 
       if (!instagramBusinessAccountId) {
+        postUrls.instagram = null;
+
         results.instagram = {
           ok: false,
           error: "Instagram não conectado corretamente.",
+          url: null,
         };
       } else {
         console.log("Publicando no Instagram:", instagramBusinessAccountId);
@@ -434,6 +499,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           caption,
         });
 
+        postUrls.instagram = instagramResult.permalink;
+
         results.instagram = {
           ok: instagramResult.ok,
           step: instagramResult.step,
@@ -441,6 +508,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           status: instagramResult.result.status,
           data: instagramResult.result.data,
           text: instagramResult.result.text,
+          url: instagramResult.permalink,
         };
       }
     }
@@ -450,7 +518,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
 
     if (hasFailure) {
-      console.error("Falha em uma ou mais plataformas:", JSON.stringify(results));
+      console.error(
+        "Falha em uma ou mais plataformas:",
+        JSON.stringify(results)
+      );
 
       await updatePostStatus({
         supabaseUrl,
@@ -463,6 +534,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({
         error: "Falha ao publicar em uma ou mais plataformas.",
         results,
+        postUrls,
       });
     }
 
@@ -479,6 +551,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       message: "Post publicado com sucesso.",
       results,
+      postUrls,
     });
   } catch (error: any) {
     console.error("Erro inesperado ao publicar:", {
