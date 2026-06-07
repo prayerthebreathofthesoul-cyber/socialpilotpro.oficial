@@ -10,7 +10,8 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
-import { setAuthToken } from "@/lib/auth";
+import { signUpWithEmail } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -28,9 +29,14 @@ import { Loader2 } from "lucide-react";
 const registerSchema = z
   .object({
     name: z.string().min(1, { message: "Informe o nome da empresa" }),
-    email: z.string().min(1, { message: "Informe seu e-mail" }),
+    email: z
+      .string()
+      .min(1, { message: "Informe seu e-mail" })
+      .email({ message: "Informe um e-mail válido" }),
     cnpj: z.string().optional().or(z.literal("")),
-    password: z.string().min(1, { message: "Informe uma senha" }),
+    password: z
+      .string()
+      .min(6, { message: "A senha precisa ter pelo menos 6 caracteres" }),
     confirmPassword: z.string().min(1, { message: "Confirme a senha" }),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -38,11 +44,13 @@ const registerSchema = z
     path: ["confirmPassword"],
   });
 
+type RegisterFormValues = z.infer<typeof registerSchema>;
+
 export default function Register() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
 
-  const form = useForm<z.infer<typeof registerSchema>>({
+  const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       name: "",
@@ -53,15 +61,76 @@ export default function Register() {
     },
   });
 
-  const onSubmit = async () => {
+  const createCompanyAndProfile = async (
+    values: RegisterFormValues,
+    userId: string
+  ) => {
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .insert({
+        name: values.name,
+        email: values.email,
+        cnpj: values.cnpj || null,
+        plan: "free",
+      })
+      .select()
+      .single();
+
+    if (companyError) {
+      throw companyError;
+    }
+
+    const { error: profileError } = await supabase.from("profiles").insert({
+      user_id: userId,
+      company_id: company.id,
+      name: values.name,
+      email: values.email,
+      role: "owner",
+    });
+
+    if (profileError) {
+      throw profileError;
+    }
+  };
+
+  const onSubmit = async (values: RegisterFormValues) => {
     setIsLoading(true);
 
-    setTimeout(() => {
-      setAuthToken("fake_token_123");
+    try {
+      const data = await signUpWithEmail(values.email, values.password, {
+        name: values.name,
+        companyName: values.name,
+        cnpj: values.cnpj,
+      });
+
+      const userId = data.user?.id;
+
+      if (!userId) {
+        toast.success(
+          "Conta criada! Verifique seu e-mail para confirmar o cadastro."
+        );
+        setLocation("/login");
+        return;
+      }
+
+      await createCompanyAndProfile(values, userId);
+
       toast.success("Conta criada com sucesso!");
       setLocation("/dashboard");
+    } catch (error: any) {
+      console.error(error);
+
+      const message =
+        error?.message === "User already registered"
+          ? "Este e-mail já está cadastrado. Faça login ou use outro e-mail."
+          : error?.message?.includes("duplicate")
+            ? "Já existe uma conta com esses dados."
+            : "Não foi possível criar a conta. Verifique os dados e tente novamente.";
+
+      toast.error(message);
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -97,6 +166,7 @@ export default function Register() {
                       <Input
                         placeholder="Minha Empresa"
                         autoComplete="organization"
+                        disabled={isLoading}
                         {...field}
                       />
                     </FormControl>
@@ -114,8 +184,9 @@ export default function Register() {
                     <FormControl>
                       <Input
                         placeholder="contato@minhaempresa.com"
-                        type="text"
+                        type="email"
                         autoComplete="email"
+                        disabled={isLoading}
                         {...field}
                       />
                     </FormControl>
@@ -131,7 +202,11 @@ export default function Register() {
                   <FormItem>
                     <FormLabel>CNPJ Opcional</FormLabel>
                     <FormControl>
-                      <Input placeholder="00.000.000/0000-00" {...field} />
+                      <Input
+                        placeholder="00.000.000/0000-00"
+                        disabled={isLoading}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -150,6 +225,7 @@ export default function Register() {
                           placeholder="******"
                           type="password"
                           autoComplete="new-password"
+                          disabled={isLoading}
                           {...field}
                         />
                       </FormControl>
@@ -169,6 +245,7 @@ export default function Register() {
                           placeholder="******"
                           type="password"
                           autoComplete="new-password"
+                          disabled={isLoading}
                           {...field}
                         />
                       </FormControl>
