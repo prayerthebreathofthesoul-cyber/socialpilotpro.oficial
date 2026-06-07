@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "public_profile",
       "pages_show_list",
       "pages_read_engagement",
-      "instagram_basic"
+      "instagram_basic",
     ].join(",");
 
     const authUrl = new URL("https://www.facebook.com/v20.0/dialog/oauth");
