@@ -170,18 +170,18 @@ export default function Dashboard() {
     return (
       <Card key={post.id} className="overflow-hidden">
         {post.media_url ? (
-          <div className="aspect-video bg-muted">
+          <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden rounded-t-xl p-2">
             <img
               src={post.media_url}
               alt={post.title}
-              className="w-full h-full object-cover"
+              className="max-w-full max-h-full object-contain bg-white rounded-md"
               onError={(event) => {
                 event.currentTarget.style.display = "none";
               }}
             />
           </div>
         ) : (
-          <div className="aspect-video bg-muted flex items-center justify-center text-muted-foreground">
+          <div className="aspect-video bg-muted flex items-center justify-center text-muted-foreground rounded-t-xl">
             <ImageIcon className="w-8 h-8" />
           </div>
         )}
