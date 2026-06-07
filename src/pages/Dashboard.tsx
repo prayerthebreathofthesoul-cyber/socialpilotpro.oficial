@@ -265,11 +265,11 @@ export default function Dashboard() {
     return (
       <Card
         key={post.id}
-        className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+        className="h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow flex flex-col"
         onClick={() => openPostEditor(post.id)}
       >
         {post.media_url ? (
-          <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden rounded-t-xl p-2">
+          <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden rounded-t-xl p-2 shrink-0">
             <img
               src={post.media_url}
               alt={post.title}
@@ -280,43 +280,51 @@ export default function Dashboard() {
             />
           </div>
         ) : (
-          <div className="aspect-video bg-muted flex items-center justify-center text-muted-foreground rounded-t-xl">
+          <div className="aspect-video bg-muted flex items-center justify-center text-muted-foreground rounded-t-xl shrink-0">
             <ImageIcon className="w-8 h-8" />
           </div>
         )}
 
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="font-semibold line-clamp-1">{post.title}</h3>
+        <CardContent className="p-4 flex flex-1 flex-col">
+          <div className="space-y-3 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold line-clamp-1">{post.title}</h3>
 
-            <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
-              {statusLabel}
-            </span>
-          </div>
+              <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
+                {statusLabel}
+              </span>
+            </div>
 
-          <p className="text-sm text-muted-foreground line-clamp-2">
-            {post.caption || "Sem legenda"}
-          </p>
-
-          {post.hashtags && (
-            <p className="text-xs text-blue-600 line-clamp-1">
-              {post.hashtags}
+            <p className="text-sm text-muted-foreground line-clamp-2 min-h-[40px]">
+              {post.caption || "Sem legenda"}
             </p>
-          )}
 
-          <div className="text-xs text-muted-foreground">
-            {post.status === "scheduled" && post.scheduled_at
-              ? `Agendado para ${format(
-                  new Date(post.scheduled_at),
-                  "dd/MM/yyyy 'às' HH:mm",
-                  { locale: ptBR }
-                )}`
-              : `Criado em ${format(new Date(post.created_at), "dd/MM/yyyy", {
-                  locale: ptBR,
-                })}`}
+            {post.hashtags ? (
+              <p className="text-xs text-blue-600 line-clamp-1 min-h-[18px]">
+                {post.hashtags}
+              </p>
+            ) : (
+              <div className="min-h-[18px]" />
+            )}
+
+            <div className="text-xs text-muted-foreground">
+              {post.status === "scheduled" && post.scheduled_at
+                ? `Agendado para ${format(
+                    new Date(post.scheduled_at),
+                    "dd/MM/yyyy 'às' HH:mm",
+                    { locale: ptBR }
+                  )}`
+                : `Criado em ${format(
+                    new Date(post.created_at),
+                    "dd/MM/yyyy",
+                    {
+                      locale: ptBR,
+                    }
+                  )}`}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-4 mt-auto">
             <Button
               type="button"
               variant="outline"
@@ -468,11 +476,11 @@ export default function Dashboard() {
                   <Skeleton className="h-[300px] rounded-xl" />
                 </div>
               ) : upcomingPosts.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
                   {upcomingPosts.map((post) => renderPostCard(post))}
                 </div>
               ) : posts.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
                   {posts.slice(0, 4).map((post) => renderPostCard(post))}
                 </div>
               ) : (
