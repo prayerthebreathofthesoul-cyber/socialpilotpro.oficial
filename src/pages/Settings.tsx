@@ -26,6 +26,8 @@ import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
+type DocumentType = "cpf" | "cnpj";
+
 type Company = {
   id: string;
   name: string;
@@ -33,6 +35,8 @@ type Company = {
   cnpj: string | null;
   email: string | null;
   plan: string | null;
+  document_type: DocumentType | null;
+  document_number: string | null;
 };
 
 type Profile = {
@@ -56,7 +60,8 @@ export default function Settings() {
   const [formData, setFormData] = useState({
     name: "",
     segment: "",
-    cnpj: "",
+    documentType: "cnpj" as DocumentType,
+    documentNumber: "",
     instagramConnected: false,
     facebookConnected: false,
     tiktokConnected: false,
@@ -107,7 +112,8 @@ export default function Settings() {
       setFormData({
         name: companyData.name || "",
         segment: companyData.segment || "",
-        cnpj: companyData.cnpj || "",
+        documentType: (companyData.document_type as DocumentType) || "cnpj",
+        documentNumber: companyData.document_number || companyData.cnpj || "",
         instagramConnected: false,
         facebookConnected: false,
         tiktokConnected: false,
@@ -138,7 +144,12 @@ export default function Settings() {
         .update({
           name: formData.name,
           segment: formData.segment || null,
-          cnpj: formData.cnpj || null,
+          document_type: formData.documentType,
+          document_number: formData.documentNumber || null,
+          cnpj:
+            formData.documentType === "cnpj"
+              ? formData.documentNumber || null
+              : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", company.id);
@@ -153,7 +164,12 @@ export default function Settings() {
               ...prev,
               name: formData.name,
               segment: formData.segment || null,
-              cnpj: formData.cnpj || null,
+              document_type: formData.documentType,
+              document_number: formData.documentNumber || null,
+              cnpj:
+                formData.documentType === "cnpj"
+                  ? formData.documentNumber || null
+                  : null,
             }
           : prev
       );
@@ -303,13 +319,17 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Dados da Empresa</CardTitle>
                   <CardDescription>
-                    Informações reais da empresa cadastrada no SocialPilot Pro.
+                    Informações reais da conta cadastrada no SocialPilot Pro.
                   </CardDescription>
                 </CardHeader>
 
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Nome da Empresa</Label>
+                    <Label htmlFor="name">
+                      {formData.documentType === "cpf"
+                        ? "Nome Completo"
+                        : "Nome da Empresa"}
+                    </Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -319,7 +339,11 @@ export default function Settings() {
                           name: event.target.value,
                         }))
                       }
-                      placeholder="Minha Empresa"
+                      placeholder={
+                        formData.documentType === "cpf"
+                          ? "Seu nome completo"
+                          : "Minha Empresa"
+                      }
                     />
                   </div>
 
@@ -338,19 +362,45 @@ export default function Settings() {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="cnpj">CNPJ Opcional</Label>
-                    <Input
-                      id="cnpj"
-                      value={formData.cnpj}
-                      onChange={(event) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          cnpj: event.target.value,
-                        }))
-                      }
-                      placeholder="00.000.000/0000-00"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="documentType">Tipo de Cadastro</Label>
+                      <select
+                        id="documentType"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={formData.documentType}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            documentType: event.target.value as DocumentType,
+                          }))
+                        }
+                      >
+                        <option value="cnpj">Pessoa Jurídica - CNPJ</option>
+                        <option value="cpf">Pessoa Física - CPF</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="documentNumber">
+                        {formData.documentType === "cpf" ? "CPF" : "CNPJ"}
+                      </Label>
+                      <Input
+                        id="documentNumber"
+                        value={formData.documentNumber}
+                        onChange={(event) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            documentNumber: event.target.value,
+                          }))
+                        }
+                        placeholder={
+                          formData.documentType === "cpf"
+                            ? "000.000.000-00"
+                            : "00.000.000/0000-00"
+                        }
+                      />
+                    </div>
                   </div>
                 </CardContent>
 
@@ -548,7 +598,12 @@ export default function Settings() {
                   </CardContent>
 
                   <CardFooter>
-                    <Button type="button" variant="outline" className="w-full" disabled>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      disabled
+                    >
                       Seu Plano
                     </Button>
                   </CardFooter>
