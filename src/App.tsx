@@ -14,6 +14,9 @@ import Media from "@/pages/Media";
 import Analytics from "@/pages/Analytics";
 import Settings from "@/pages/Settings";
 import Support from "@/pages/Support";
+import Privacy from "@/pages/Privacy";
+import Terms from "@/pages/Terms";
+import DataDeletion from "@/pages/DataDeletion";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +25,11 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
+
+      <Route path="/privacy" component={Privacy} />
+      <Route path="/terms" component={Terms} />
+      <Route path="/data-deletion" component={DataDeletion} />
+
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/posts/new" component={NewPost} />
@@ -30,8 +38,7 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/settings" component={Settings} />
       <Route path="/support" component={Support} />
-      
-      {/* Root redirects handled in Layout based on auth */}
+
       <Route path="/" component={Dashboard} />
       <Route component={NotFound} />
     </Switch>
