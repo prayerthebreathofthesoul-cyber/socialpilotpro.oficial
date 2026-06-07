@@ -10,7 +10,7 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
-import { setAuthToken } from "@/lib/auth";
+import { signInWithEmail } from "@/lib/auth";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,7 +26,10 @@ import {
 import { Loader2 } from "lucide-react";
 
 const loginSchema = z.object({
-  email: z.string().min(1, { message: "Informe seu email" }),
+  email: z
+    .string()
+    .min(1, { message: "Informe seu e-mail" })
+    .email({ message: "Informe um e-mail válido" }),
   password: z.string().min(1, { message: "Informe sua senha" }),
 });
 
@@ -42,15 +45,26 @@ export default function Login() {
     },
   });
 
-  const onSubmit = async () => {
+  const onSubmit = async (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
 
-    setTimeout(() => {
-      setAuthToken("fake_token_123");
-      toast.success("Login realizado com sucesso");
+    try {
+      await signInWithEmail(values.email, values.password);
+
+      toast.success("Login realizado com sucesso!");
       setLocation("/dashboard");
+    } catch (error: any) {
+      console.error(error);
+
+      const message =
+        error?.message === "Invalid login credentials"
+          ? "E-mail ou senha incorretos."
+          : "Não foi possível fazer login. Verifique seus dados e tente novamente.";
+
+      toast.error(message);
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   return (
@@ -84,8 +98,9 @@ export default function Login() {
                     <FormControl>
                       <Input
                         placeholder="seu@email.com"
-                        type="text"
+                        type="email"
                         autoComplete="email"
+                        disabled={isLoading}
                         {...field}
                       />
                     </FormControl>
@@ -107,7 +122,7 @@ export default function Login() {
                         className="text-sm font-medium text-primary hover:underline"
                         onClick={() =>
                           toast.info(
-                            "A recuperação de senha será configurada na versão com login real."
+                            "A recuperação de senha será configurada no próximo passo."
                           )
                         }
                       >
@@ -120,6 +135,7 @@ export default function Login() {
                         placeholder="******"
                         type="password"
                         autoComplete="current-password"
+                        disabled={isLoading}
                         {...field}
                       />
                     </FormControl>
