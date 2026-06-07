@@ -1,5 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { fetch as undiciFetch } from "undici";
+
+const safeFetch = (globalThis.fetch || undiciFetch) as typeof fetch;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -45,6 +48,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         persistSession: false,
         autoRefreshToken: false,
       },
+      global: {
+        fetch: safeFetch,
+      },
     });
 
     console.log("Buscando state no Supabase");
@@ -77,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     tokenUrl.searchParams.set("redirect_uri", redirectUri);
     tokenUrl.searchParams.set("code", code);
 
-    const tokenResponse = await fetch(tokenUrl.toString());
+    const tokenResponse = await safeFetch(tokenUrl.toString());
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok || !tokenData.access_token) {
@@ -93,7 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     meUrl.searchParams.set("fields", "id,name,email");
     meUrl.searchParams.set("access_token", accessToken);
 
-    const meResponse = await fetch(meUrl.toString());
+    const meResponse = await safeFetch(meUrl.toString());
     const meData = await meResponse.json();
 
     if (!meResponse.ok || !meData.id) {
@@ -103,18 +109,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log("Marcando state como usado");
 
-    await supabaseAdmin
+    const { error: usedError } = await supabaseAdmin
       .from("meta_oauth_states")
       .update({ used: true })
       .eq("id", oauthState.id);
 
+    if (usedError) {
+      console.error("Erro ao marcar state usado:", JSON.stringify(usedError));
+      return res.redirect("/settings?meta=state_update_error");
+    }
+
     console.log("Removendo conexão antiga");
 
-    await supabaseAdmin
+    const { error: deleteError } = await supabaseAdmin
       .from("social_accounts")
       .delete()
       .eq("company_id", oauthState.company_id)
       .eq("platform", "facebook");
+
+    if (deleteError) {
+      console.error(
+        "Erro ao remover conexão antiga:",
+        JSON.stringify(deleteError)
+      );
+      return res.redirect("/settings?meta=delete_error");
+    }
 
     console.log("Salvando conexão básica do Facebook");
 
