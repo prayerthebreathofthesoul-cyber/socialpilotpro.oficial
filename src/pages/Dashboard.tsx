@@ -40,6 +40,7 @@ type SupabasePost = {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  error_message?: string | null;
 };
 
 type SocialAccount = {
@@ -61,6 +62,15 @@ type DashboardAlert = {
   id: string;
   severity: "info" | "warning" | "error";
   message: string;
+};
+
+type RecentActivity = {
+  id: string;
+  action: string;
+  postTitle: string;
+  timestamp: string;
+  status: PostStatus;
+  description: string;
 };
 
 export default function Dashboard() {
@@ -111,7 +121,7 @@ export default function Dashboard() {
         .from("posts")
         .select("*")
         .eq("company_id", companyId)
-        .order("created_at", { ascending: false });
+        .order("updated_at", { ascending: false });
 
       if (postsError) {
         throw postsError;
@@ -166,6 +176,15 @@ export default function Dashboard() {
 
   const alerts: DashboardAlert[] = [];
 
+  if (statusCounts.failed > 0) {
+    alerts.push({
+      id: "failed-posts",
+      severity: "error",
+      message:
+        "Existem publicações com falha. Verifique as permissões das redes sociais ou tente publicar novamente.",
+    });
+  }
+
   if (!facebookConnected && !instagramConnected) {
     alerts.push({
       id: "no-social-accounts",
@@ -189,31 +208,69 @@ export default function Dashboard() {
     });
   }
 
-  const upcomingPosts = posts
-    .filter((post) => post.status === "scheduled")
+  const recentPosts = [...posts]
     .sort((a, b) => {
-      const dateA = a.scheduled_at ? new Date(a.scheduled_at).getTime() : 0;
-      const dateB = b.scheduled_at ? new Date(b.scheduled_at).getTime() : 0;
+      const getDate = (post: SupabasePost) => {
+        if (post.status === "scheduled" && post.scheduled_at) {
+          return new Date(post.scheduled_at).getTime();
+        }
 
-      return dateA - dateB;
+        if (post.status === "published" && post.published_at) {
+          return new Date(post.published_at).getTime();
+        }
+
+        return new Date(post.updated_at || post.created_at).getTime();
+      };
+
+      return getDate(b) - getDate(a);
     })
     .slice(0, 4);
 
-  const recentActivity = posts.slice(0, 5).map((post) => {
+  const getActivityDescription = (post: SupabasePost) => {
+    if (post.status === "scheduled") {
+      return post.scheduled_at
+        ? `Agendado para ${format(
+            new Date(post.scheduled_at),
+            "dd/MM 'às' HH:mm",
+            { locale: ptBR }
+          )}`
+        : "Post agendado para publicação automática.";
+    }
+
+    if (post.status === "published") {
+      const platforms = post.platforms?.length
+        ? post.platforms.join(", ")
+        : "redes sociais";
+
+      return `Publicado em ${platforms}.`;
+    }
+
+    if (post.status === "failed") {
+      return post.error_message
+        ? `Motivo: ${post.error_message.slice(0, 120)}`
+        : "Motivo: houve uma falha na publicação. Verifique as permissões da conta conectada.";
+    }
+
+    return "Rascunho salvo. Ainda não foi agendado nem publicado.";
+  };
+
+  const recentActivity: RecentActivity[] = posts.slice(0, 6).map((post) => {
     const action =
       post.status === "draft"
         ? "Rascunho criado"
         : post.status === "scheduled"
           ? "Post agendado"
           : post.status === "published"
-            ? "Post marcado como publicado"
-            : "Falha registrada";
+            ? "Post publicado com sucesso"
+            : "Falha ao publicar";
 
     return {
       id: post.id,
       action,
-      postTitle: post.title,
+      postTitle: post.title || "Post sem título",
       timestamp: post.updated_at || post.created_at,
+      status: post.status,
+      description: getActivityDescription(post),
     };
   });
 
@@ -252,15 +309,74 @@ export default function Dashboard() {
     }
   };
 
+  const getStatusLabel = (status: PostStatus) => {
+    if (status === "draft") return "Rascunho";
+    if (status === "scheduled") return "Agendado";
+    if (status === "published") return "Publicado";
+    return "Falhou";
+  };
+
+  const getStatusClasses = (status: PostStatus) => {
+    if (status === "scheduled") {
+      return "bg-blue-50 text-blue-700 border border-blue-200";
+    }
+
+    if (status === "published") {
+      return "bg-green-50 text-green-700 border border-green-200";
+    }
+
+    if (status === "failed") {
+      return "bg-red-50 text-red-700 border border-red-200";
+    }
+
+    return "bg-muted text-muted-foreground border border-border";
+  };
+
+  const getActivityDotClass = (status: PostStatus) => {
+    if (status === "scheduled") return "bg-blue-600";
+    if (status === "published") return "bg-green-600";
+    if (status === "failed") return "bg-red-600";
+    return "bg-muted-foreground";
+  };
+
+  const getPostDateLabel = (post: SupabasePost) => {
+    if (post.status === "scheduled" && post.scheduled_at) {
+      return `Agendado para ${format(
+        new Date(post.scheduled_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
+    }
+
+    if (post.status === "published" && post.published_at) {
+      return `Publicado em ${format(
+        new Date(post.published_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
+    }
+
+    if (post.status === "failed") {
+      return `Falhou em ${format(
+        new Date(post.updated_at || post.created_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
+    }
+
+    return `Criado em ${format(new Date(post.created_at), "dd/MM/yyyy", {
+      locale: ptBR,
+    })}`;
+  };
+
+  const getMainButtonLabel = (status: PostStatus) => {
+    if (status === "published") return "Ver detalhes";
+    if (status === "failed") return "Ver erro";
+    return "Editar Post";
+  };
+
   const renderPostCard = (post: SupabasePost) => {
-    const statusLabel =
-      post.status === "draft"
-        ? "Rascunho"
-        : post.status === "scheduled"
-          ? "Agendado"
-          : post.status === "published"
-            ? "Publicado"
-            : "Falhou";
+    const statusLabel = getStatusLabel(post.status);
 
     return (
       <Card
@@ -288,9 +404,15 @@ export default function Dashboard() {
         <CardContent className="p-4 flex flex-1 flex-col">
           <div className="space-y-3 flex-1">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-semibold line-clamp-1">{post.title}</h3>
+              <h3 className="font-semibold line-clamp-1">
+                {post.title || "Post sem título"}
+              </h3>
 
-              <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
+              <span
+                className={`text-xs px-2 py-1 rounded-full shrink-0 ${getStatusClasses(
+                  post.status
+                )}`}
+              >
                 {statusLabel}
               </span>
             </div>
@@ -307,20 +429,24 @@ export default function Dashboard() {
               <div className="min-h-[18px]" />
             )}
 
-            <div className="text-xs text-muted-foreground">
-              {post.status === "scheduled" && post.scheduled_at
-                ? `Agendado para ${format(
-                    new Date(post.scheduled_at),
-                    "dd/MM/yyyy 'às' HH:mm",
-                    { locale: ptBR }
-                  )}`
-                : `Criado em ${format(
-                    new Date(post.created_at),
-                    "dd/MM/yyyy",
-                    {
-                      locale: ptBR,
-                    }
-                  )}`}
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">
+                {getPostDateLabel(post)}
+              </div>
+
+              {post.platforms && post.platforms.length > 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  Redes: {post.platforms.join(", ")}
+                </div>
+              ) : null}
+
+              {post.status === "failed" ? (
+                <div className="text-xs text-red-600 line-clamp-2">
+                  {post.error_message
+                    ? `Erro: ${post.error_message}`
+                    : "Erro: falha na publicação. Verifique as permissões."}
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -335,7 +461,7 @@ export default function Dashboard() {
                 openPostEditor(post.id);
               }}
             >
-              Editar Post
+              {getMainButtonLabel(post.status)}
             </Button>
 
             <Button
@@ -460,7 +586,7 @@ export default function Dashboard() {
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold tracking-tight">
-                  Próximos Posts
+                  Posts Recentes
                 </h2>
 
                 <Button variant="ghost" size="sm" asChild>
@@ -475,13 +601,9 @@ export default function Dashboard() {
                   <Skeleton className="h-[300px] rounded-xl" />
                   <Skeleton className="h-[300px] rounded-xl" />
                 </div>
-              ) : upcomingPosts.length > 0 ? (
+              ) : recentPosts.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
-                  {upcomingPosts.map((post) => renderPostCard(post))}
-                </div>
-              ) : posts.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
-                  {posts.slice(0, 4).map((post) => renderPostCard(post))}
+                  {recentPosts.map((post) => renderPostCard(post))}
                 </div>
               ) : (
                 <Card className="flex flex-col items-center justify-center p-12 text-center h-64 border-dashed">
@@ -570,15 +692,25 @@ export default function Dashboard() {
                   <div className="space-y-4">
                     {recentActivity.map((activity) => (
                       <div key={activity.id} className="flex gap-3 items-start">
-                        <div className="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0" />
+                        <div
+                          className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${getActivityDotClass(
+                            activity.status
+                          )}`}
+                        />
 
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm font-medium leading-snug">
                             <span className="text-muted-foreground font-normal">
                               {activity.action}
                             </span>
                             <br />
-                            {activity.postTitle}
+                            <span className="font-semibold">
+                              {activity.postTitle}
+                            </span>
+                          </p>
+
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                            {activity.description}
                           </p>
 
                           <span className="text-xs text-muted-foreground">
