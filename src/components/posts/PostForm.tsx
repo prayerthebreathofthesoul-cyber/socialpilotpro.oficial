@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,6 @@ import {
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 import { supabase } from "@/lib/supabase";
-import { useState } from "react";
 
 const platformSchema = z.enum(["instagram", "facebook", "tiktok"]);
 
@@ -53,10 +52,15 @@ interface PostFormProps {
   onCancel: () => void;
 }
 
+const POST_MEDIA_BUCKET = "post-media";
+
 export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const isEditing = Boolean(initialData?.id);
+
   const [isPending, setIsPending] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -104,6 +108,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     platform: Platform,
     currentValue: Platform[] = []
   ) => {
+    if (platform === "tiktok") {
+      toast.info("TikTok ainda está em desenvolvimento.");
+      return currentValue;
+    }
+
     if (checked === true) {
       return currentValue.includes(platform)
         ? currentValue
@@ -113,7 +122,39 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     return currentValue.filter((item) => item !== platform);
   };
 
-  const handleMediaFileChange = (
+  const uploadMediaToSupabase = async (file: File) => {
+    const companyId = await getCompanyId();
+
+    const fileExtension = file.name.split(".").pop() || "png";
+    const safeFileName = `${companyId}/${Date.now()}-${crypto.randomUUID()}.${fileExtension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(POST_MEDIA_BUCKET)
+      .upload(safeFileName, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
+
+    if (uploadError) {
+      throw new Error(
+        uploadError.message ||
+          "Erro ao enviar imagem. Verifique se o bucket post-media existe e está público."
+      );
+    }
+
+    const { data } = supabase.storage
+      .from(POST_MEDIA_BUCKET)
+      .getPublicUrl(safeFileName);
+
+    if (!data?.publicUrl) {
+      throw new Error("Não foi possível gerar URL pública da imagem.");
+    }
+
+    return data.publicUrl;
+  };
+
+  const handleMediaFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = event.target.files?.[0];
@@ -133,24 +174,27 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       return;
     }
 
-    const reader = new FileReader();
+    setIsUploadingMedia(true);
 
-    reader.onload = () => {
-      const imageDataUrl = String(reader.result || "");
+    try {
+      const publicUrl = await uploadMediaToSupabase(file);
 
-      form.setValue("mediaUrl", imageDataUrl, {
+      form.setValue("mediaUrl", publicUrl, {
         shouldDirty: true,
         shouldValidate: true,
       });
 
-      toast.success("Imagem adicionada ao post.");
-    };
+      toast.success("Imagem enviada e adicionada ao post.");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Não foi possível enviar a imagem.");
+    } finally {
+      setIsUploadingMedia(false);
 
-    reader.onerror = () => {
-      toast.error("Não foi possível carregar a imagem.");
-    };
-
-    reader.readAsDataURL(file);
+      if (event.target) {
+        event.target.value = "";
+      }
+    }
   };
 
   const buildPostPayload = async (values: FormValues, action: SaveAction) => {
@@ -160,7 +204,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       action === "schedule"
         ? "scheduled"
         : action === "publish-now"
-          ? "published"
+          ? "publishing"
           : "draft";
 
     return {
@@ -176,52 +220,109 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         action === "schedule" && values.scheduledAt
           ? new Date(values.scheduledAt).toISOString()
           : null,
-      published_at:
-        action === "publish-now" ? new Date().toISOString() : null,
+      published_at: null,
+      error_message: null,
       updated_at: new Date().toISOString(),
     };
+  };
+
+  const publishPostNow = async (postId: string | number) => {
+    const response = await fetch("/api/meta/publish", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        postId,
+      }),
+    });
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      console.error("Erro ao publicar na Meta:", result);
+
+      const message =
+        result?.error ||
+        result?.details ||
+        "Erro ao publicar nas redes sociais.";
+
+      throw new Error(message);
+    }
+
+    return result;
   };
 
   const onSubmit = async (values: FormValues, action: SaveAction) => {
     setIsPending(true);
 
     try {
+      if (action === "publish-now") {
+        if (values.platforms.includes("tiktok")) {
+          throw new Error(
+            "TikTok ainda não está disponível para publicação automática."
+          );
+        }
+
+        if (!values.mediaUrl) {
+          throw new Error("Adicione uma imagem antes de publicar.");
+        }
+
+        if (!values.mediaUrl.startsWith("https://")) {
+          throw new Error(
+            "Para publicar agora, a imagem precisa ser uma URL pública https. Escolha a imagem novamente para enviar ao Supabase."
+          );
+        }
+      }
+
       const payload = await buildPostPayload(values, action);
 
+      let savedPostId = initialData?.id;
+
       if (isEditing && initialData?.id) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("posts")
           .update(payload)
-          .eq("id", initialData.id);
+          .eq("id", initialData.id)
+          .select("id")
+          .single();
 
         if (error) throw error;
 
-        if (action === "schedule") {
-          toast.success("Postagem agendada com sucesso.");
-        } else if (action === "publish-now") {
-          toast.success(
-            "Post salvo como publicado no sistema. A publicação real nas redes será feita após conectar a API oficial."
-          );
-        } else {
-          toast.success("Rascunho atualizado com sucesso.");
-        }
+        savedPostId = data?.id || initialData.id;
       } else {
-        const { error } = await supabase.from("posts").insert({
-          ...payload,
-          created_at: new Date().toISOString(),
-        });
+        const { data, error } = await supabase
+          .from("posts")
+          .insert({
+            ...payload,
+            created_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
 
         if (error) throw error;
 
-        if (action === "schedule") {
-          toast.success("Postagem agendada com sucesso.");
-        } else if (action === "publish-now") {
-          toast.success(
-            "Post salvo como publicado no sistema. A publicação real nas redes será feita após conectar a API oficial."
-          );
-        } else {
-          toast.success("Rascunho salvo com sucesso.");
-        }
+        savedPostId = data?.id;
+      }
+
+      if (!savedPostId) {
+        throw new Error("Não foi possível identificar o post salvo.");
+      }
+
+      if (action === "publish-now") {
+        toast.info("Enviando publicação para Facebook/Instagram...");
+
+        await publishPostNow(savedPostId);
+
+        toast.success("Post publicado com sucesso nas redes conectadas.");
+      } else if (action === "schedule") {
+        toast.success("Postagem agendada com sucesso.");
+      } else {
+        toast.success(
+          isEditing
+            ? "Rascunho atualizado com sucesso."
+            : "Rascunho salvo com sucesso."
+        );
       }
 
       onSuccess();
@@ -320,22 +421,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                           </span>
                         </label>
 
-                        <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
+                        <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md opacity-60 cursor-not-allowed">
                           <Checkbox
                             checked={field.value?.includes("tiktok")}
-                            onCheckedChange={(checked) =>
-                              field.onChange(
-                                handlePlatformChange(
-                                  checked,
-                                  "tiktok",
-                                  field.value || []
-                                )
-                              )
-                            }
+                            disabled
                           />
                           <span className="font-normal flex items-center gap-2">
                             <SiTiktok className="w-4 h-4" />
-                            TikTok
+                            TikTok em breve
                           </span>
                         </label>
                       </div>
@@ -375,7 +468,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       <div className="flex flex-col sm:flex-row gap-2">
                         <FormControl>
                           <Input
-                            placeholder="Cole uma URL direta de imagem ou escolha uma imagem do computador"
+                            placeholder="Cole uma URL direta https ou escolha uma imagem do computador"
                             {...field}
                           />
                         </FormControl>
@@ -392,15 +485,21 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                           type="button"
                           variant="outline"
                           onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploadingMedia || isPending}
                         >
-                          <Upload className="w-4 h-4 mr-2" />
-                          Escolher Imagem
+                          {isUploadingMedia ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Upload className="w-4 h-4 mr-2" />
+                          )}
+                          {isUploadingMedia ? "Enviando..." : "Escolher Imagem"}
                         </Button>
                       </div>
 
                       <FormDescription>
-                        Você pode colar uma URL direta de imagem ou selecionar
-                        uma imagem do seu computador.
+                        Para publicar agora, a imagem precisa estar em uma URL
+                        pública https. Ao escolher uma imagem do computador, ela
+                        será enviada para o Supabase Storage.
                       </FormDescription>
 
                       <FormMessage />
@@ -453,8 +552,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         <Input type="datetime-local" {...field} />
                       </FormControl>
                       <FormDescription>
-                        Preencha para agendar. Deixe em branco para salvar como
-                        rascunho ou marcar como publicado no sistema.
+                        Preencha para agendar. Deixe em branco para publicar
+                        agora ou salvar como rascunho.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -479,7 +578,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 onClick={form.handleSubmit((data) =>
                   onSubmit(data, hasScheduleDate ? "schedule" : "publish-now")
                 )}
-                disabled={isPending}
+                disabled={isPending || isUploadingMedia}
               >
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -492,7 +591,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 variant="outline"
                 className="w-full"
                 onClick={form.handleSubmit((data) => onSubmit(data, "draft"))}
-                disabled={isPending}
+                disabled={isPending || isUploadingMedia}
               >
                 Salvar como Rascunho
               </Button>
@@ -502,7 +601,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 variant="ghost"
                 className="w-full text-muted-foreground"
                 onClick={onCancel}
-                disabled={isPending}
+                disabled={isPending || isUploadingMedia}
               >
                 Cancelar
               </Button>
@@ -542,7 +641,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       onError={(event) => {
                         event.currentTarget.style.display = "none";
                         toast.error(
-                          "Não foi possível carregar essa imagem. Use uma URL direta ou escolha uma imagem do computador."
+                          "Não foi possível carregar essa imagem. Use uma URL direta https ou escolha uma imagem do computador."
                         );
                       }}
                     />
