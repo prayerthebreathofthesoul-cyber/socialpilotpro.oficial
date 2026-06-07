@@ -227,9 +227,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       onSuccess();
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        error?.message || "Ocorreu um erro ao salvar a postagem."
-      );
+      toast.error(error?.message || "Ocorreu um erro ao salvar a postagem.");
     } finally {
       setIsPending(false);
     }
@@ -515,10 +513,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 </div>
 
                 {mediaPreview ? (
-                  <div className="aspect-square bg-muted">
+                  <div className="aspect-square bg-muted flex items-center justify-center overflow-hidden p-2">
                     <img
                       src={mediaPreview}
-                      className="w-full h-full object-cover"
+                      className="max-w-full max-h-full object-contain bg-white rounded-md"
                       alt="Preview da mídia"
                       onError={(event) => {
                         event.currentTarget.style.display = "none";
@@ -535,13 +533,20 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   </div>
                 )}
 
-                <div className="p-3 text-sm">
-                  <p className="line-clamp-3 whitespace-pre-wrap">
+                <div className="p-3 text-sm space-y-2">
+                  <p className="font-semibold text-sm line-clamp-2">
+                    {form.watch("title") || "Título do post"}
+                  </p>
+
+                  <p className="line-clamp-3 whitespace-pre-wrap text-muted-foreground">
                     {form.watch("caption") || "Sua legenda aparecerá aqui..."}
                   </p>
-                  <p className="text-blue-600 mt-1">
-                    {form.watch("hashtags")}
-                  </p>
+
+                  {form.watch("hashtags") && (
+                    <p className="text-blue-600 mt-1 line-clamp-2">
+                      {form.watch("hashtags")}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
