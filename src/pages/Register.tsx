@@ -11,7 +11,6 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { signUpWithEmail } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -61,71 +60,25 @@ export default function Register() {
     },
   });
 
-  const createCompanyAndProfile = async (
-    values: RegisterFormValues,
-    userId: string
-  ) => {
-    const { data: company, error: companyError } = await supabase
-      .from("companies")
-      .insert({
-        name: values.name,
-        email: values.email,
-        cnpj: values.cnpj || null,
-        plan: "free",
-      })
-      .select()
-      .single();
-
-    if (companyError) {
-      throw companyError;
-    }
-
-    const { error: profileError } = await supabase.from("profiles").insert({
-      user_id: userId,
-      company_id: company.id,
-      name: values.name,
-      email: values.email,
-      role: "owner",
-    });
-
-    if (profileError) {
-      throw profileError;
-    }
-  };
-
   const onSubmit = async (values: RegisterFormValues) => {
     setIsLoading(true);
 
     try {
-      const data = await signUpWithEmail(values.email, values.password, {
+      await signUpWithEmail(values.email, values.password, {
         name: values.name,
         companyName: values.name,
-        cnpj: values.cnpj,
+        cnpj: values.cnpj || "",
       });
-
-      const userId = data.user?.id;
-
-      if (!userId) {
-        toast.success(
-          "Conta criada! Verifique seu e-mail para confirmar o cadastro."
-        );
-        setLocation("/login");
-        return;
-      }
-
-      await createCompanyAndProfile(values, userId);
 
       toast.success("Conta criada com sucesso!");
       setLocation("/dashboard");
     } catch (error: any) {
-      console.error(error);
+      console.error("Erro ao criar conta:", error);
 
       const message =
         error?.message === "User already registered"
           ? "Este e-mail já está cadastrado. Faça login ou use outro e-mail."
-          : error?.message?.includes("duplicate")
-            ? "Já existe uma conta com esses dados."
-            : "Não foi possível criar a conta. Verifique os dados e tente novamente.";
+          : error?.message || "Não foi possível criar a conta. Tente novamente.";
 
       toast.error(message);
     } finally {
