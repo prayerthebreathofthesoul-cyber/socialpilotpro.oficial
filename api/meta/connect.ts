@@ -14,16 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).send("State ausente.");
     }
 
-    const scopes = [
-      "public_profile",
-      "email",
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_posts",
-      "instagram_basic",
-      "instagram_content_publish",
-      "business_management",
-    ].join(",");
+    const scopes = ["public_profile", "email"].join(",");
 
     const authUrl = new URL("https://www.facebook.com/v20.0/dialog/oauth");
 
