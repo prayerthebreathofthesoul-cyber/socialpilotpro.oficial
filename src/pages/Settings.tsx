@@ -16,31 +16,42 @@ import {
   Mail,
   Instagram,
   Facebook,
-  Bell,
   Key,
   Shield,
   Rocket,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
-import {
-  useListStores,
-  getListStoresQueryKey,
-  useUpdateStore,
-} from "@/lib/mock-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+
+type Company = {
+  id: string;
+  name: string;
+  segment: string | null;
+  cnpj: string | null;
+  email: string | null;
+  plan: string | null;
+};
+
+type Profile = {
+  id: string;
+  user_id: string;
+  company_id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+};
 
 export default function Settings() {
-  const queryClient = useQueryClient();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSavingCompany, setIsSavingCompany] = useState(false);
+  const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
 
-  const { data: stores, isLoading } = useListStores({
-    query: { queryKey: getListStoresQueryKey() },
-  });
-
-  const updateStore = useUpdateStore();
-  const store = stores?.[0];
+  const [userEmail, setUserEmail] = useState("");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -51,62 +62,216 @@ export default function Settings() {
     tiktokConnected: false,
   });
 
-  useEffect(() => {
-    if (store) {
-      setFormData({
-        name: store.name || "",
-        segment: store.segment || "",
-        cnpj: store.cnpj || "",
-        instagramConnected: !!store.instagramConnected,
-        facebookConnected: !!store.facebookConnected,
-        tiktokConnected: !!store.tiktokConnected,
-      });
-    }
-  }, [store]);
-
-  const handleSaveStore = async () => {
-    if (!store) return;
+  const loadAccountData = async () => {
+    setIsLoading(true);
 
     try {
-      await updateStore.mutateAsync({
-        id: store.id,
-        data: {
-          name: formData.name,
-          segment: formData.segment,
-          cnpj: formData.cnpj || null,
-        },
-      });
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      toast.success("Dados da empresa atualizados.");
-      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
-    } catch {
-      toast.error("Erro ao atualizar os dados da empresa.");
+      if (userError || !user) {
+        toast.error("Não foi possível carregar o usuário logado.");
+        return;
+      }
+
+      setUserEmail(user.email || "");
+
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        toast.error("Perfil da conta não encontrado.");
+        return;
+      }
+
+      setProfile(profileData);
+
+      const { data: companyData, error: companyError } = await supabase
+        .from("companies")
+        .select("*")
+        .eq("id", profileData.company_id)
+        .single();
+
+      if (companyError || !companyData) {
+        toast.error("Empresa da conta não encontrada.");
+        return;
+      }
+
+      setCompany(companyData);
+
+      setFormData({
+        name: companyData.name || "",
+        segment: companyData.segment || "",
+        cnpj: companyData.cnpj || "",
+        instagramConnected: false,
+        facebookConnected: false,
+        tiktokConnected: false,
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao carregar dados da conta.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleToggleConnection = async (
-    platform: "instagramConnected" | "facebookConnected" | "tiktokConnected"
-  ) => {
-    if (!store) return;
+  useEffect(() => {
+    loadAccountData();
+  }, []);
 
-    const newValue = !formData[platform];
+  const handleSaveCompany = async () => {
+    if (!company) {
+      toast.error("Empresa não encontrada.");
+      return;
+    }
 
-    setFormData((prev) => ({ ...prev, [platform]: newValue }));
+    setIsSavingCompany(true);
 
     try {
-      await updateStore.mutateAsync({
-        id: store.id,
-        data: {
-          [platform]: newValue,
-        },
+      const { error } = await supabase
+        .from("companies")
+        .update({
+          name: formData.name,
+          segment: formData.segment || null,
+          cnpj: formData.cnpj || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", company.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setCompany((prev) =>
+        prev
+          ? {
+              ...prev,
+              name: formData.name,
+              segment: formData.segment || null,
+              cnpj: formData.cnpj || null,
+            }
+          : prev
+      );
+
+      toast.success("Dados da empresa atualizados com sucesso.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao atualizar os dados da empresa.");
+    } finally {
+      setIsSavingCompany(false);
+    }
+  };
+
+  const handleChangeEmail = async () => {
+    const newEmail = window.prompt("Digite o novo e-mail da conta:", userEmail);
+
+    if (!newEmail) return;
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+
+    if (!normalizedEmail.includes("@")) {
+      toast.error("Digite um e-mail válido.");
+      return;
+    }
+
+    setIsUpdatingAccount(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        email: normalizedEmail,
       });
 
-      toast.success(`${newValue ? "Conectado" : "Desconectado"} com sucesso.`);
-      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
-    } catch {
-      toast.error("Erro ao alterar conexão.");
-      setFormData((prev) => ({ ...prev, [platform]: !newValue }));
+      if (error) {
+        throw error;
+      }
+
+      if (profile) {
+        await supabase
+          .from("profiles")
+          .update({
+            email: normalizedEmail,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", profile.id);
+      }
+
+      if (company) {
+        await supabase
+          .from("companies")
+          .update({
+            email: normalizedEmail,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", company.id);
+      }
+
+      setUserEmail(normalizedEmail);
+
+      toast.success(
+        "Solicitação de alteração enviada. Verifique seu e-mail se o Supabase solicitar confirmação."
+      );
+    } catch (error: any) {
+      console.error(error);
+      toast.error(
+        error?.message || "Não foi possível alterar o e-mail da conta."
+      );
+    } finally {
+      setIsUpdatingAccount(false);
     }
+  };
+
+  const handleChangePassword = async () => {
+    const newPassword = window.prompt(
+      "Digite a nova senha. Ela precisa ter pelo menos 6 caracteres:"
+    );
+
+    if (!newPassword) return;
+
+    if (newPassword.length < 6) {
+      toast.error("A senha precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    setIsUpdatingAccount(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success("Senha atualizada com sucesso.");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(
+        error?.message || "Não foi possível alterar a senha da conta."
+      );
+    } finally {
+      setIsUpdatingAccount(false);
+    }
+  };
+
+  const handleToggleConnection = (
+    platform: "instagramConnected" | "facebookConnected" | "tiktokConnected"
+  ) => {
+    const platformName =
+      platform === "instagramConnected"
+        ? "Instagram"
+        : platform === "facebookConnected"
+          ? "Facebook"
+          : "TikTok";
+
+    toast.info(
+      `A conexão real com ${platformName} será feita no próximo passo usando API oficial.`
+    );
   };
 
   return (
@@ -138,7 +303,7 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Dados da Empresa</CardTitle>
                   <CardDescription>
-                    Informações básicas usadas dentro do SocialPilot Pro.
+                    Informações reais da empresa cadastrada no SocialPilot Pro.
                   </CardDescription>
                 </CardHeader>
 
@@ -192,10 +357,10 @@ export default function Settings() {
                 <CardFooter className="border-t px-6 py-4">
                   <Button
                     type="button"
-                    onClick={handleSaveStore}
-                    disabled={updateStore.isPending}
+                    onClick={handleSaveCompany}
+                    disabled={isSavingCompany}
                   >
-                    Salvar Alterações
+                    {isSavingCompany ? "Salvando..." : "Salvar Alterações"}
                   </Button>
                 </CardFooter>
               </Card>
@@ -204,7 +369,7 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Credenciais de Acesso</CardTitle>
                   <CardDescription>
-                    Dados demonstrativos da conta atual.
+                    Dados reais da conta autenticada pelo Supabase.
                   </CardDescription>
                 </CardHeader>
 
@@ -218,7 +383,7 @@ export default function Settings() {
                       <div>
                         <p className="font-medium text-sm">E-mail</p>
                         <p className="text-sm text-muted-foreground">
-                          admin@minhaempresa.com.br
+                          {userEmail || "E-mail não encontrado"}
                         </p>
                       </div>
                     </div>
@@ -227,11 +392,8 @@ export default function Settings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        toast.info(
-                          "A alteração de e-mail será configurada na versão com login real."
-                        )
-                      }
+                      onClick={handleChangeEmail}
+                      disabled={isUpdatingAccount}
                     >
                       Alterar
                     </Button>
@@ -246,7 +408,7 @@ export default function Settings() {
                       <div>
                         <p className="font-medium text-sm">Senha</p>
                         <p className="text-sm text-muted-foreground">
-                          Gerenciada pelo login do sistema
+                          Senha protegida pelo Supabase Auth
                         </p>
                       </div>
                     </div>
@@ -255,11 +417,8 @@ export default function Settings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        toast.info(
-                          "A alteração de senha será configurada na versão com login real."
-                        )
-                      }
+                      onClick={handleChangePassword}
+                      disabled={isUpdatingAccount}
                     >
                       Alterar
                     </Button>
@@ -288,9 +447,7 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">Instagram</p>
                         <p className="text-sm text-muted-foreground">
-                          {formData.instagramConnected
-                            ? "Conectado como @minhaempresa"
-                            : "Não conectado"}
+                          Não conectado
                         </p>
                       </div>
                     </div>
@@ -300,7 +457,6 @@ export default function Settings() {
                       onCheckedChange={() =>
                         handleToggleConnection("instagramConnected")
                       }
-                      disabled={updateStore.isPending}
                     />
                   </div>
 
@@ -313,9 +469,7 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">Facebook</p>
                         <p className="text-sm text-muted-foreground">
-                          {formData.facebookConnected
-                            ? "Página vinculada"
-                            : "Não conectado"}
+                          Não conectado
                         </p>
                       </div>
                     </div>
@@ -325,7 +479,6 @@ export default function Settings() {
                       onCheckedChange={() =>
                         handleToggleConnection("facebookConnected")
                       }
-                      disabled={updateStore.isPending}
                     />
                   </div>
 
@@ -338,9 +491,7 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">TikTok</p>
                         <p className="text-sm text-muted-foreground">
-                          {formData.tiktokConnected
-                            ? "Conectado"
-                            : "Não conectado"}
+                          Não conectado
                         </p>
                       </div>
                     </div>
@@ -350,7 +501,6 @@ export default function Settings() {
                       onCheckedChange={() =>
                         handleToggleConnection("tiktokConnected")
                       }
-                      disabled={updateStore.isPending}
                     />
                   </div>
                 </CardContent>
@@ -360,7 +510,7 @@ export default function Settings() {
             <TabsContent value="plano" className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card className="border-primary shadow-sm relative overflow-hidden">
-                  {store?.plan === "free" && (
+                  {(company?.plan || "free") === "free" && (
                     <div className="absolute top-0 right-0 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-bl-lg">
                       Plano Atual
                     </div>
@@ -398,19 +548,14 @@ export default function Settings() {
                   </CardContent>
 
                   <CardFooter>
-                    <Button
-                      type="button"
-                      variant={store?.plan === "free" ? "outline" : "default"}
-                      className="w-full"
-                      disabled={store?.plan === "free"}
-                    >
-                      {store?.plan === "free" ? "Seu Plano" : "Fazer Downgrade"}
+                    <Button type="button" variant="outline" className="w-full" disabled>
+                      Seu Plano
                     </Button>
                   </CardFooter>
                 </Card>
 
                 <Card className="border-orange-500 shadow-md relative overflow-hidden">
-                  {store?.plan === "premium" && (
+                  {company?.plan === "premium" && (
                     <div className="absolute top-0 right-0 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">
                       Plano Atual
                     </div>
@@ -458,19 +603,15 @@ export default function Settings() {
                   <CardFooter>
                     <Button
                       type="button"
-                      className={`w-full ${
-                        store?.plan === "premium"
-                          ? ""
-                          : "bg-orange-600 hover:bg-orange-700 text-white"
-                      }`}
-                      disabled={store?.plan === "premium"}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                      disabled={company?.plan === "premium"}
                       onClick={() =>
-                        toast.success(
-                          "O upgrade será configurado na versão com pagamentos."
+                        toast.info(
+                          "A cobrança real será configurada depois com o sistema de pagamentos."
                         )
                       }
                     >
-                      {store?.plan === "premium"
+                      {company?.plan === "premium"
                         ? "Gerenciar Assinatura"
                         : "Fazer Upgrade Agora"}
                     </Button>
