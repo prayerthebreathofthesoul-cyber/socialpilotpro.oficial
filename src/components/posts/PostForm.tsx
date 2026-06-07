@@ -77,6 +77,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     platforms: string[];
   } | null>(null);
 
+  const [publishingOverlay, setPublishingOverlay] = useState(false);
+
   const getInitialMediaUrls = () => {
     if (Array.isArray(initialData?.media_urls)) {
       return initialData.media_urls.filter(Boolean);
@@ -412,6 +414,63 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     return platform;
   };
 
+  const formatSelectedPlatforms = (platforms: string[]) => {
+    const names = platforms.map((platform) => formatPlatformName(platform));
+
+    if (names.length === 0) {
+      return "as redes sociais";
+    }
+
+    if (names.length === 1) {
+      return names[0];
+    }
+
+    if (names.length === 2) {
+      return `${names[0]} e ${names[1]}`;
+    }
+
+    return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+  };
+
+  const getPublishingMessage = (
+    platforms: string[],
+    isCarouselPost: boolean
+  ) => {
+    const platformText = formatSelectedPlatforms(platforms);
+
+    if (isCarouselPost) {
+      return `Publicando carrossel no ${platformText}...`;
+    }
+
+    return `Publicando no ${platformText}...`;
+  };
+
+  const getPublishedSuccessTitle = (platforms: string[]) => {
+    if (platforms.length === 1) {
+      return `Publicação feita com sucesso no ${formatSelectedPlatforms(
+        platforms
+      )}!`;
+    }
+
+    if (platforms.includes("instagram") && platforms.includes("facebook")) {
+      return "Publicação feita com sucesso nas duas redes sociais!";
+    }
+
+    return `Publicação feita com sucesso em ${formatSelectedPlatforms(
+      platforms
+    )}!`;
+  };
+
+  const getPublishedSuccessDescription = (platforms: string[]) => {
+    if (platforms.length === 1) {
+      return `Seu post foi enviado para o ${formatSelectedPlatforms(
+        platforms
+      )}.`;
+    }
+
+    return `Seu post foi enviado para ${formatSelectedPlatforms(platforms)}.`;
+  };
+
   const onSubmit = async (values: FormValues, action: SaveAction) => {
     setIsPending(true);
 
@@ -477,15 +536,16 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       }
 
       if (action === "publish-now") {
+        setPublishingOverlay(true);
+
         const loadingToast = toast.loading(
-          mediaUrls.length > 1
-            ? "Enviando carrossel para Facebook/Instagram..."
-            : "Enviando publicação para Facebook/Instagram..."
+          getPublishingMessage(values.platforms, mediaUrls.length > 1)
         );
 
         const publishResult = await publishPostNow(savedPostId);
 
         toast.dismiss(loadingToast);
+        setPublishingOverlay(false);
 
         const postUrl = getPublishedPostUrl(publishResult);
 
@@ -494,10 +554,12 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           platforms: values.platforms,
         });
 
-        toast.success("Publicação feita com sucesso!", {
+        toast.success(getPublishedSuccessTitle(values.platforms), {
           description: postUrl
-            ? "Clique em Ver post para abrir a publicação."
-            : "Seu post foi enviado para as redes sociais conectadas.",
+            ? `${getPublishedSuccessDescription(
+                values.platforms
+              )} Clique em Ver post para abrir a publicação.`
+            : getPublishedSuccessDescription(values.platforms),
           duration: 10000,
           action: postUrl
             ? {
@@ -528,6 +590,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       onSuccess();
     } catch (error: any) {
       console.error(error);
+      setPublishingOverlay(false);
       toast.error(error?.message || "Ocorreu um erro ao salvar a postagem.");
     } finally {
       setIsPending(false);
@@ -538,48 +601,65 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const mediaUrls = form.watch("mediaUrls") || [];
   const mediaPreview = mediaUrls[0] || form.watch("mediaUrl");
   const postType = form.watch("type");
+  const selectedPlatforms = form.watch("platforms") || [];
   const isStory = postType === "story";
   const isCarousel = mediaUrls.length > 1;
 
   return (
     <div className="space-y-6">
-      {publishSuccess && (
-        <Card className="border-green-500 bg-green-50 shadow-xl">
-          <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-              <div className="flex items-start gap-4">
-                <div className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                  <CheckCircle2 className="w-10 h-10 text-white" />
-                </div>
-
-                <div>
-                  <h2 className="text-3xl font-bold text-green-800">
-                    Publicação feita com sucesso!
-                  </h2>
-
-                  <p className="text-green-700 mt-2 text-lg">
-                    Seu post foi enviado para{" "}
-                    <strong>
-                      {publishSuccess.platforms
-                        .map((platform) => formatPlatformName(platform))
-                        .join(" e ")}
-                    </strong>
-                    .
-                  </p>
-
-                  <p className="text-green-700/80 mt-2 text-sm">
-                    Agora você pode abrir o post publicado ou voltar ao
-                    calendário.
-                  </p>
-                </div>
+      {publishingOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-8 shadow-2xl border animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center mb-5">
+                <Loader2 className="w-10 h-10 text-blue-700 animate-spin" />
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
+              <h2 className="text-3xl font-bold text-slate-900">
+                {getPublishingMessage(selectedPlatforms, isCarousel)}
+              </h2>
+
+              <p className="text-lg text-slate-600 mt-3">
+                Aguarde um instante. Estamos enviando sua publicação para{" "}
+                {formatSelectedPlatforms(selectedPlatforms)}.
+              </p>
+
+              <div className="mt-6 w-full rounded-lg bg-blue-50 border border-blue-200 p-4">
+                <p className="text-sm font-medium text-blue-800">
+                  Não feche esta tela enquanto a publicação está sendo enviada.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {publishSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-8 shadow-2xl border border-green-300 animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-24 h-24 rounded-full bg-green-600 flex items-center justify-center mb-5 shadow-lg animate-in zoom-in duration-700">
+                <CheckCircle2 className="w-14 h-14 text-white" />
+              </div>
+
+              <h2 className="text-4xl font-extrabold text-green-800">
+                {getPublishedSuccessTitle(publishSuccess.platforms)}
+              </h2>
+
+              <p className="text-xl text-green-700 mt-4">
+                {getPublishedSuccessDescription(publishSuccess.platforms)}
+              </p>
+
+              <p className="text-base text-slate-600 mt-3">
+                Agora você pode abrir o post publicado ou voltar ao calendário.
+              </p>
+
+              <div className="mt-8 flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
                 {publishSuccess.postUrl && (
                   <Button
                     type="button"
                     size="lg"
-                    className="bg-green-700 hover:bg-green-800 text-white"
+                    className="bg-green-700 hover:bg-green-800 text-white text-base px-6 py-6"
                     onClick={() =>
                       window.open(
                         publishSuccess.postUrl!,
@@ -597,14 +677,25 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   type="button"
                   size="lg"
                   variant="outline"
+                  className="text-base px-6 py-6"
                   onClick={onSuccess}
                 >
                   Voltar ao calendário
                 </Button>
+
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="ghost"
+                  className="text-base px-6 py-6"
+                  onClick={() => setPublishSuccess(null)}
+                >
+                  Continuar nesta tela
+                </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
