@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -8,38 +9,216 @@ import {
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
-  useGetDashboardSummary,
-  getGetDashboardSummaryQueryKey,
-} from "@/lib/mock-api";
-import {
   CalendarClock,
   FileEdit,
   CheckCircle2,
   AlertCircle,
   Plus,
   ArrowRight,
+  Image as ImageIcon,
 } from "lucide-react";
-import { PostCard } from "@/components/posts/PostCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
-type RecentActivityItem = {
-  id: string | number;
-  action: string;
-  postTitle: string;
-  timestamp: string | Date;
+type PostStatus = "draft" | "scheduled" | "published" | "failed";
+
+type SupabasePost = {
+  id: string;
+  company_id: string;
+  title: string;
+  caption: string | null;
+  hashtags: string | null;
+  media_url: string | null;
+  type: string;
+  status: PostStatus;
+  platforms: string[] | null;
+  scheduled_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type StatusCounts = {
+  draft: number;
+  scheduled: number;
+  published: number;
+  failed: number;
 };
 
 export default function Dashboard() {
-  const { data: summary, isLoading } = useGetDashboardSummary({
-    query: { queryKey: getGetDashboardSummaryQueryKey() },
+  const [isLoading, setIsLoading] = useState(true);
+  const [posts, setPosts] = useState<SupabasePost[]>([]);
+  const [statusCounts, setStatusCounts] = useState<StatusCounts>({
+    draft: 0,
+    scheduled: 0,
+    published: 0,
+    failed: 0,
   });
 
-  const recentActivity: RecentActivityItem[] =
-    summary && "recentActivity" in summary && Array.isArray(summary.recentActivity)
-      ? (summary.recentActivity as RecentActivityItem[])
-      : [];
+  const getCompanyId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error("Usuário não autenticado.");
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profileError || !profile?.company_id) {
+      throw new Error("Empresa do usuário não encontrada.");
+    }
+
+    return profile.company_id as string;
+  };
+
+  const loadDashboardData = async () => {
+    setIsLoading(true);
+
+    try {
+      const companyId = await getCompanyId();
+
+      const { data, error } = await supabase
+        .from("posts")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      const realPosts = (data || []) as SupabasePost[];
+
+      setPosts(realPosts);
+
+      setStatusCounts({
+        draft: realPosts.filter((post) => post.status === "draft").length,
+        scheduled: realPosts.filter((post) => post.status === "scheduled")
+          .length,
+        published: realPosts.filter((post) => post.status === "published")
+          .length,
+        failed: realPosts.filter((post) => post.status === "failed").length,
+      });
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Erro ao carregar dados do painel.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const upcomingPosts = posts
+    .filter((post) => post.status === "scheduled")
+    .sort((a, b) => {
+      const dateA = a.scheduled_at ? new Date(a.scheduled_at).getTime() : 0;
+      const dateB = b.scheduled_at ? new Date(b.scheduled_at).getTime() : 0;
+      return dateA - dateB;
+    })
+    .slice(0, 4);
+
+  const recentActivity = posts.slice(0, 5).map((post) => {
+    const action =
+      post.status === "draft"
+        ? "Rascunho criado"
+        : post.status === "scheduled"
+          ? "Post agendado"
+          : post.status === "published"
+            ? "Post marcado como publicado"
+            : "Falha registrada";
+
+    return {
+      id: post.id,
+      action,
+      postTitle: post.title,
+      timestamp: post.updated_at || post.created_at,
+    };
+  });
+
+  const alerts = [
+    {
+      id: 1,
+      severity: "info",
+      message:
+        "As redes sociais ainda precisam ser conectadas para publicação automática real.",
+    },
+  ];
+
+  const renderPostCard = (post: SupabasePost) => {
+    const statusLabel =
+      post.status === "draft"
+        ? "Rascunho"
+        : post.status === "scheduled"
+          ? "Agendado"
+          : post.status === "published"
+            ? "Publicado"
+            : "Falhou";
+
+    return (
+      <Card key={post.id} className="overflow-hidden">
+        {post.media_url ? (
+          <div className="aspect-video bg-muted">
+            <img
+              src={post.media_url}
+              alt={post.title}
+              className="w-full h-full object-cover"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
+            />
+          </div>
+        ) : (
+          <div className="aspect-video bg-muted flex items-center justify-center text-muted-foreground">
+            <ImageIcon className="w-8 h-8" />
+          </div>
+        )}
+
+        <CardContent className="p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-semibold line-clamp-1">{post.title}</h3>
+            <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
+              {statusLabel}
+            </span>
+          </div>
+
+          <p className="text-sm text-muted-foreground line-clamp-2">
+            {post.caption || "Sem legenda"}
+          </p>
+
+          {post.hashtags && (
+            <p className="text-xs text-blue-600 line-clamp-1">
+              {post.hashtags}
+            </p>
+          )}
+
+          <div className="text-xs text-muted-foreground">
+            {post.status === "scheduled" && post.scheduled_at
+              ? `Agendado para ${format(
+                  new Date(post.scheduled_at),
+                  "dd/MM/yyyy 'às' HH:mm",
+                  { locale: ptBR }
+                )}`
+              : `Criado em ${format(new Date(post.created_at), "dd/MM/yyyy", {
+                  locale: ptBR,
+                })}`}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <Layout>
@@ -71,7 +250,7 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-2xl font-bold">
-                  {summary?.statusCounts?.scheduled || 0}
+                  {statusCounts.scheduled}
                 </div>
               )}
             </CardContent>
@@ -86,9 +265,7 @@ export default function Dashboard() {
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                <div className="text-2xl font-bold">
-                  {summary?.statusCounts?.draft || 0}
-                </div>
+                <div className="text-2xl font-bold">{statusCounts.draft}</div>
               )}
             </CardContent>
           </Card>
@@ -103,7 +280,7 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-2xl font-bold">
-                  {summary?.statusCounts?.published || 0}
+                  {statusCounts.published}
                 </div>
               )}
             </CardContent>
@@ -121,7 +298,7 @@ export default function Dashboard() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-2xl font-bold text-destructive">
-                  {summary?.statusCounts?.failed || 0}
+                  {statusCounts.failed}
                 </div>
               )}
             </CardContent>
@@ -148,11 +325,13 @@ export default function Dashboard() {
                   <Skeleton className="h-[300px] rounded-xl" />
                   <Skeleton className="h-[300px] rounded-xl" />
                 </div>
-              ) : summary?.upcomingPosts && summary.upcomingPosts.length > 0 ? (
+              ) : upcomingPosts.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {summary.upcomingPosts.slice(0, 4).map((post) => (
-                    <PostCard key={post.id} post={post} />
-                  ))}
+                  {upcomingPosts.map((post) => renderPostCard(post))}
+                </div>
+              ) : posts.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {posts.slice(0, 4).map((post) => renderPostCard(post))}
                 </div>
               ) : (
                 <Card className="flex flex-col items-center justify-center p-12 text-center h-64 border-dashed">
@@ -161,11 +340,11 @@ export default function Dashboard() {
                   </div>
 
                   <h3 className="text-lg font-semibold mb-2">
-                    Nenhum post agendado
+                    Nenhum post criado
                   </h3>
 
                   <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                    Você não tem nenhuma postagem agendada para os próximos dias.
+                    Você ainda não tem nenhuma postagem salva no SocialPilot Pro.
                   </p>
 
                   <Button asChild>
@@ -188,8 +367,8 @@ export default function Dashboard() {
                     <Skeleton className="h-16 w-full" />
                     <Skeleton className="h-16 w-full" />
                   </div>
-                ) : summary?.alerts && summary.alerts.length > 0 ? (
-                  summary.alerts.map((alert) => (
+                ) : alerts.length > 0 ? (
+                  alerts.map((alert) => (
                     <div
                       key={alert.id}
                       className={`p-3 rounded-md text-sm border-l-4 ${
