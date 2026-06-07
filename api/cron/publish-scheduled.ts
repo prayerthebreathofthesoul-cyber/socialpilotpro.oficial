@@ -90,19 +90,49 @@ function getBaseUrl(req: VercelRequest) {
     return appUrl.replace(/\/$/, "");
   }
 
-  const vercelUrl = process.env.VERCEL_URL;
-
-  if (vercelUrl) {
-    return `https://${vercelUrl}`.replace(/\/$/, "");
-  }
-
   const host = req.headers.host;
 
   if (host) {
     return `https://${host}`.replace(/\/$/, "");
   }
 
+  const vercelUrl = process.env.VERCEL_URL;
+
+  if (vercelUrl) {
+    return `https://${vercelUrl}`.replace(/\/$/, "");
+  }
+
   return "";
+}
+
+function getVercelBypassHeaders() {
+  const bypassSecret =
+    process.env.VERCEL_AUTOMATION_BYPASS_SECRET ||
+    process.env.VERCEL_PROTECTION_BYPASS_SECRET ||
+    "";
+
+  if (!bypassSecret) {
+    return {};
+  }
+
+  return {
+    "x-vercel-protection-bypass": bypassSecret,
+  };
+}
+
+function getPublishHeaders() {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getVercelBypassHeaders(),
+  };
+
+  const publishSecret = process.env.PUBLISH_SECRET;
+
+  if (publishSecret) {
+    headers.Authorization = `Bearer ${publishSecret}`;
+  }
+
+  return headers;
 }
 
 async function markPostFailed(params: {
@@ -121,10 +151,25 @@ async function markPostFailed(params: {
     headers: supabaseHeaders(serviceRoleKey),
     body: {
       status: "failed",
-      error_message: errorMessage,
+      error_message: errorMessage.slice(0, 1000),
       updated_at: new Date().toISOString(),
     },
   });
+}
+
+function cleanErrorMessage(text: string) {
+  if (!text) {
+    return "Falha ao publicar post agendado automaticamente.";
+  }
+
+  if (
+    text.includes("Authentication Required") ||
+    text.includes("Deployment Protection")
+  ) {
+    return "Falha ao publicar: a rota /api/meta/publish está protegida pela Vercel. Configure VERCEL_AUTOMATION_BYPASS_SECRET ou desative a proteção do deploy.";
+  }
+
+  return text.slice(0, 1000);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -155,6 +200,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!supabaseUrl || !serviceRoleKey) {
       return res.status(500).json({
         error: "Configuração do Supabase ausente.",
+        missing: {
+          supabaseUrl: !supabaseUrl,
+          serviceRoleKey: !serviceRoleKey,
+        },
       });
     }
 
@@ -185,6 +234,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!scheduledResult.ok) {
       return res.status(500).json({
         error: "Erro ao buscar posts agendados.",
+        status: scheduledResult.status,
         details: scheduledResult.text,
       });
     }
@@ -197,6 +247,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true,
         message: "Nenhum post agendado para publicar agora.",
+        checkedAt: nowIso,
         published: 0,
         failed: 0,
       });
@@ -206,11 +257,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     for (const post of scheduledPosts) {
       try {
-        const publishResult = await requestJson(`${baseUrl}/api/meta/publish`, {
+        const publishUrl = `${baseUrl}/api/meta/publish`;
+
+        const publishResult = await requestJson(publishUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: getPublishHeaders(),
           body: {
             postId: post.id,
           },
@@ -229,9 +280,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             supabaseUrl,
             serviceRoleKey,
             postId: post.id,
-            errorMessage:
-              publishResult.text ||
-              "Falha ao publicar post agendado automaticamente.",
+            errorMessage: cleanErrorMessage(publishResult.text),
           });
         }
       } catch (error: any) {
@@ -261,6 +310,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       message: "Verificação de posts agendados concluída.",
       checkedAt: nowIso,
+      baseUrl,
       total: results.length,
       published,
       failed,
