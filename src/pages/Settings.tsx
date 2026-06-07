@@ -286,18 +286,9 @@ export default function Settings() {
     }
   };
 
-  const handleToggleConnection = (
-    platform: "instagramConnected" | "facebookConnected" | "tiktokConnected"
-  ) => {
-    const platformName =
-      platform === "instagramConnected"
-        ? "Instagram"
-        : platform === "facebookConnected"
-          ? "Facebook"
-          : "TikTok";
-
+  const handleConnectSocial = (platform: "Instagram" | "Facebook") => {
     toast.info(
-      `A conexão real com ${platformName} será feita no próximo passo usando API oficial.`
+      `A conexão real com ${platform} será feita no próximo passo usando a API oficial da Meta.`
     );
   };
 
@@ -498,8 +489,8 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Contas Conectadas</CardTitle>
                   <CardDescription>
-                    Vincule suas redes sociais para organizar e preparar suas
-                    postagens em um só lugar.
+                    Conecte suas redes sociais para preparar suas postagens em um
+                    só lugar.
                   </CardDescription>
                 </CardHeader>
 
@@ -518,12 +509,13 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <Switch
-                      checked={formData.instagramConnected}
-                      onCheckedChange={() =>
-                        handleToggleConnection("instagramConnected")
-                      }
-                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleConnectSocial("Instagram")}
+                    >
+                      Conectar
+                    </Button>
                   </div>
 
                   <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -540,15 +532,16 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <Switch
-                      checked={formData.facebookConnected}
-                      onCheckedChange={() =>
-                        handleToggleConnection("facebookConnected")
-                      }
-                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleConnectSocial("Facebook")}
+                    >
+                      Conectar
+                    </Button>
                   </div>
 
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center justify-between p-4 border rounded-lg opacity-75">
                     <div className="flex items-center gap-4">
                       <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-full text-slate-900 dark:text-slate-100">
                         <SiTiktok className="w-5 h-5" />
@@ -557,17 +550,14 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">TikTok</p>
                         <p className="text-sm text-muted-foreground">
-                          Não conectado
+                          Integração em breve
                         </p>
                       </div>
                     </div>
 
-                    <Switch
-                      checked={formData.tiktokConnected}
-                      onCheckedChange={() =>
-                        handleToggleConnection("tiktokConnected")
-                      }
-                    />
+                    <Button type="button" variant="outline" disabled>
+                      Em breve
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
