@@ -48,6 +48,29 @@ type Profile = {
   role: string | null;
 };
 
+const segmentOptions = [
+  "Ferramentas e utilidades",
+  "Moda e acessórios",
+  "Beleza e cosméticos",
+  "Alimentação",
+  "Saúde e bem-estar",
+  "Educação e cursos",
+  "Tecnologia e informática",
+  "Casa e decoração",
+  "Serviços profissionais",
+  "Marketing digital",
+  "Loja virtual / E-commerce",
+  "Prestador de serviços",
+  "Infoprodutos",
+  "Consultoria",
+  "Restaurante / Lanchonete",
+  "Imobiliária",
+  "Automotivo",
+  "Pet shop",
+  "Academia / Fitness",
+  "Outro",
+];
+
 export default function Settings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingCompany, setIsSavingCompany] = useState(false);
@@ -337,8 +360,9 @@ export default function Settings() {
 
                   <div className="space-y-2">
                     <Label htmlFor="segment">Segmento/Nicho</Label>
-                    <Input
+                    <select
                       id="segment"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       value={formData.segment}
                       onChange={(event) =>
                         setFormData((prev) => ({
@@ -346,8 +370,14 @@ export default function Settings() {
                           segment: event.target.value,
                         }))
                       }
-                      placeholder="Ex: Ferramentas, moda, cosméticos..."
-                    />
+                    >
+                      <option value="">Selecione um segmento</option>
+                      {segmentOptions.map((segment) => (
+                        <option key={segment} value={segment}>
+                          {segment}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
