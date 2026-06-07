@@ -16,6 +16,7 @@ import {
   Plus,
   ArrowRight,
   Image as ImageIcon,
+  Trash2,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
@@ -41,6 +42,14 @@ type SupabasePost = {
   updated_at: string;
 };
 
+type SocialAccount = {
+  id: string;
+  company_id: string;
+  platform: string;
+  status: string | null;
+  is_connected: boolean | null;
+};
+
 type StatusCounts = {
   draft: number;
   scheduled: number;
@@ -48,10 +57,20 @@ type StatusCounts = {
   failed: number;
 };
 
+type DashboardAlert = {
+  id: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+};
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+
   const [isLoading, setIsLoading] = useState(true);
   const [posts, setPosts] = useState<SupabasePost[]>([]);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({
     draft: 0,
     scheduled: 0,
@@ -88,19 +107,30 @@ export default function Dashboard() {
     try {
       const companyId = await getCompanyId();
 
-      const { data, error } = await supabase
+      const { data: postsData, error: postsError } = await supabase
         .from("posts")
         .select("*")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
 
-      if (error) {
-        throw error;
+      if (postsError) {
+        throw postsError;
       }
 
-      const realPosts = (data || []) as SupabasePost[];
+      const { data: accountsData, error: accountsError } = await supabase
+        .from("social_accounts")
+        .select("id, company_id, platform, status, is_connected")
+        .eq("company_id", companyId);
+
+      if (accountsError) {
+        throw accountsError;
+      }
+
+      const realPosts = (postsData || []) as SupabasePost[];
+      const realAccounts = (accountsData || []) as SocialAccount[];
 
       setPosts(realPosts);
+      setSocialAccounts(realAccounts);
 
       setStatusCounts({
         draft: realPosts.filter((post) => post.status === "draft").length,
@@ -122,11 +152,49 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
+  const isAccountConnected = (platform: string) => {
+    return socialAccounts.some(
+      (account) =>
+        account.platform === platform &&
+        account.status === "connected" &&
+        account.is_connected === true
+    );
+  };
+
+  const facebookConnected = isAccountConnected("facebook");
+  const instagramConnected = isAccountConnected("instagram");
+
+  const alerts: DashboardAlert[] = [];
+
+  if (!facebookConnected && !instagramConnected) {
+    alerts.push({
+      id: "no-social-accounts",
+      severity: "warning",
+      message:
+        "Conecte Instagram e Facebook para publicar automaticamente nas redes sociais.",
+    });
+  } else if (!instagramConnected) {
+    alerts.push({
+      id: "instagram-missing",
+      severity: "info",
+      message:
+        "O Facebook está conectado. Conecte também o Instagram para publicar nas duas redes.",
+    });
+  } else if (!facebookConnected) {
+    alerts.push({
+      id: "facebook-missing",
+      severity: "info",
+      message:
+        "O Instagram está conectado. Conecte também o Facebook para publicar nas duas redes.",
+    });
+  }
+
   const upcomingPosts = posts
     .filter((post) => post.status === "scheduled")
     .sort((a, b) => {
       const dateA = a.scheduled_at ? new Date(a.scheduled_at).getTime() : 0;
       const dateB = b.scheduled_at ? new Date(b.scheduled_at).getTime() : 0;
+
       return dateA - dateB;
     })
     .slice(0, 4);
@@ -149,17 +217,39 @@ export default function Dashboard() {
     };
   });
 
-  const alerts = [
-    {
-      id: 1,
-      severity: "info",
-      message:
-        "As redes sociais ainda precisam ser conectadas para publicação automática real.",
-    },
-  ];
-
   const openPostEditor = (postId: string) => {
     setLocation(`/posts/${postId}/edit`);
+  };
+
+  const handleDeletePost = async (post: SupabasePost) => {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir o post "${post.title}"?\n\nEssa ação remove o post do sistema.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingPostId(post.id);
+
+    try {
+      const { error } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", post.id)
+        .eq("company_id", post.company_id);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success("Post excluído com sucesso.");
+
+      await loadDashboardData();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Erro ao excluir post.");
+    } finally {
+      setDeletingPostId(null);
+    }
   };
 
   const renderPostCard = (post: SupabasePost) => {
@@ -198,6 +288,7 @@ export default function Dashboard() {
         <CardContent className="p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-semibold line-clamp-1">{post.title}</h3>
+
             <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
               {statusLabel}
             </span>
@@ -225,18 +316,41 @@ export default function Dashboard() {
                 })}`}
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full mt-2"
-            onClick={(event) => {
-              event.stopPropagation();
-              openPostEditor(post.id);
-            }}
-          >
-            Editar Post
-          </Button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={(event) => {
+                event.stopPropagation();
+                openPostEditor(post.id);
+              }}
+            >
+              Editar Post
+            </Button>
+
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="w-full"
+              disabled={deletingPostId === post.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleDeletePost(post);
+              }}
+            >
+              {deletingPostId === post.id ? (
+                "Excluindo..."
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Excluir
+                </>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     );
@@ -248,6 +362,7 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+
             <p className="text-muted-foreground mt-1">
               Bem-vindo de volta! Aqui está o resumo da sua conta.
             </p>
@@ -267,6 +382,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium">Agendados</CardTitle>
               <CalendarClock className="h-4 w-4 text-blue-500" />
             </CardHeader>
+
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
@@ -283,6 +399,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium">Rascunhos</CardTitle>
               <FileEdit className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
+
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
@@ -297,6 +414,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium">Publicados</CardTitle>
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             </CardHeader>
+
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
@@ -313,8 +431,10 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium text-destructive">
                 Falhos
               </CardTitle>
+
               <AlertCircle className="h-4 w-4 text-destructive" />
             </CardHeader>
+
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
@@ -408,8 +528,12 @@ export default function Dashboard() {
                     </div>
                   ))
                 ) : (
-                  <div className="text-sm text-muted-foreground text-center py-4">
-                    Tudo certo! Sem avisos no momento.
+                  <div className="flex items-start gap-2 rounded-md border-l-4 border-green-500 bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950/20">
+                    <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>
+                      Tudo certo! Suas redes sociais estão conectadas para
+                      publicação automática.
+                    </span>
                   </div>
                 )}
               </CardContent>
@@ -426,6 +550,7 @@ export default function Dashboard() {
                     {[1, 2, 3].map((item) => (
                       <div key={item} className="flex gap-3">
                         <Skeleton className="w-2 h-2 rounded-full mt-2" />
+
                         <div className="space-y-2 flex-1">
                           <Skeleton className="h-4 w-full" />
                           <Skeleton className="h-3 w-24" />
