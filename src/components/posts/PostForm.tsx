@@ -26,6 +26,7 @@ import {
   Upload,
   CheckCircle2,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 import { supabase } from "@/lib/supabase";
@@ -41,6 +42,7 @@ const formSchema = z.object({
     .array(platformSchema)
     .min(1, "Selecione pelo menos uma plataforma"),
   mediaUrl: z.string().optional().or(z.literal("")),
+  mediaUrls: z.array(z.string()).optional(),
   scheduledAt: z.string().optional(),
 });
 
@@ -69,6 +71,28 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     platforms: string[];
   } | null>(null);
 
+  const getInitialMediaUrls = () => {
+    if (Array.isArray(initialData?.media_urls)) {
+      return initialData.media_urls.filter(Boolean);
+    }
+
+    if (Array.isArray(initialData?.mediaUrls)) {
+      return initialData.mediaUrls.filter(Boolean);
+    }
+
+    if (initialData?.media_url) {
+      return [initialData.media_url];
+    }
+
+    if (initialData?.mediaUrl) {
+      return [initialData.mediaUrl];
+    }
+
+    return [];
+  };
+
+  const initialMediaUrls = getInitialMediaUrls();
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -77,7 +101,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       hashtags: initialData?.hashtags || "",
       type: initialData?.type || "feed",
       platforms: initialData?.platforms || ["instagram"],
-      mediaUrl: initialData?.mediaUrl || initialData?.media_url || "",
+      mediaUrl: initialMediaUrls[0] || "",
+      mediaUrls: initialMediaUrls,
       scheduledAt:
         initialData?.scheduledAt || initialData?.scheduled_at
           ? new Date(initialData.scheduledAt || initialData.scheduled_at)
@@ -164,36 +189,66 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const handleMediaFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
 
-    if (!file) return;
+    if (files.length === 0) return;
 
     setPublishSuccess(null);
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("Selecione um arquivo de imagem.");
+    const invalidFile = files.find((file) => !file.type.startsWith("image/"));
+
+    if (invalidFile) {
+      toast.error("Selecione apenas arquivos de imagem.");
       return;
     }
 
     const maxSizeInMB = 5;
     const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
 
-    if (file.size > maxSizeInBytes) {
-      toast.error(`A imagem precisa ter no máximo ${maxSizeInMB}MB.`);
+    const oversizedFile = files.find((file) => file.size > maxSizeInBytes);
+
+    if (oversizedFile) {
+      toast.error(`Cada imagem precisa ter no máximo ${maxSizeInMB}MB.`);
+      return;
+    }
+
+    const currentMediaUrls = form.getValues("mediaUrls") || [];
+
+    if (currentMediaUrls.length + files.length > 10) {
+      toast.error("O carrossel pode ter no máximo 10 imagens.");
       return;
     }
 
     setIsUploadingMedia(true);
 
     try {
-      const publicUrl = await uploadMediaToSupabase(file);
+      toast.info(
+        files.length > 1
+          ? "Enviando imagens do carrossel..."
+          : "Enviando imagem..."
+      );
 
-      form.setValue("mediaUrl", publicUrl, {
+      const uploadedUrls = await Promise.all(
+        files.map((file) => uploadMediaToSupabase(file))
+      );
+
+      const nextMediaUrls = [...currentMediaUrls, ...uploadedUrls];
+
+      form.setValue("mediaUrls", nextMediaUrls, {
         shouldDirty: true,
         shouldValidate: true,
       });
 
-      toast.success("Imagem enviada e adicionada ao post.");
+      form.setValue("mediaUrl", nextMediaUrls[0] || "", {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      toast.success(
+        files.length > 1
+          ? "Imagens adicionadas ao carrossel."
+          : "Imagem enviada e adicionada ao post."
+      );
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || "Não foi possível enviar a imagem.");
@@ -206,8 +261,30 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
   };
 
+  const removeMediaUrl = (urlToRemove: string) => {
+    setPublishSuccess(null);
+
+    const currentMediaUrls = form.getValues("mediaUrls") || [];
+    const nextMediaUrls = currentMediaUrls.filter((url) => url !== urlToRemove);
+
+    form.setValue("mediaUrls", nextMediaUrls, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    form.setValue("mediaUrl", nextMediaUrls[0] || "", {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    toast.success("Imagem removida.");
+  };
+
   const buildPostPayload = async (values: FormValues, action: SaveAction) => {
     const companyId = await getCompanyId();
+
+    const mediaUrls = (values.mediaUrls || []).filter(Boolean);
+    const primaryMediaUrl = mediaUrls[0] || values.mediaUrl || null;
 
     const status =
       action === "schedule"
@@ -223,7 +300,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       hashtags: values.hashtags || "",
       type: values.type,
       platforms: values.platforms,
-      media_url: values.mediaUrl || null,
+      media_url: primaryMediaUrl,
+      media_urls: mediaUrls,
       status,
       scheduled_at:
         action === "schedule" && values.scheduledAt
@@ -289,6 +367,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     setIsPending(true);
 
     try {
+      const mediaUrls = (values.mediaUrls || []).filter(Boolean);
+
       if (action === "publish-now") {
         setPublishSuccess(null);
 
@@ -298,13 +378,17 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           );
         }
 
-        if (!values.mediaUrl) {
-          throw new Error("Adicione uma imagem antes de publicar.");
+        if (mediaUrls.length === 0) {
+          throw new Error("Adicione pelo menos uma imagem antes de publicar.");
         }
 
-        if (!values.mediaUrl.startsWith("https://")) {
+        const invalidMediaUrl = mediaUrls.find(
+          (url) => !url.startsWith("https://")
+        );
+
+        if (invalidMediaUrl) {
           throw new Error(
-            "Para publicar agora, a imagem precisa ser uma URL pública https. Escolha a imagem novamente para enviar ao Supabase."
+            "Para publicar agora, todas as imagens precisam ser URLs públicas https. Escolha as imagens novamente para enviar ao Supabase."
           );
         }
       }
@@ -345,7 +429,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
       if (action === "publish-now") {
         const loadingToast = toast.loading(
-          "Enviando publicação para Facebook/Instagram..."
+          mediaUrls.length > 1
+            ? "Enviando carrossel para Facebook/Instagram..."
+            : "Enviando publicação para Facebook/Instagram..."
         );
 
         const publishResult = await publishPostNow(savedPostId);
@@ -400,9 +486,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   };
 
   const hasScheduleDate = Boolean(form.watch("scheduledAt"));
-  const mediaPreview = form.watch("mediaUrl");
+  const mediaUrls = form.watch("mediaUrls") || [];
+  const mediaPreview = mediaUrls[0] || form.watch("mediaUrl");
   const postType = form.watch("type");
   const isStory = postType === "story";
+  const isCarousel = mediaUrls.length > 1;
 
   return (
     <div className="space-y-6">
@@ -456,7 +544,12 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   </Button>
                 )}
 
-                <Button type="button" size="lg" variant="outline" onClick={onSuccess}>
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  onClick={onSuccess}
+                >
                   Voltar ao calendário
                 </Button>
               </div>
@@ -586,22 +679,23 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   <FormField
                     control={form.control}
                     name="mediaUrl"
-                    render={({ field }) => (
+                    render={() => (
                       <FormItem>
-                        <FormLabel>Imagem ou URL da Mídia</FormLabel>
+                        <FormLabel>
+                          Imagens da Postagem{" "}
+                          {isCarousel && (
+                            <span className="text-xs text-muted-foreground">
+                              ({mediaUrls.length} imagens no carrossel)
+                            </span>
+                          )}
+                        </FormLabel>
 
                         <div className="flex flex-col sm:flex-row gap-2">
-                          <FormControl>
-                            <Input
-                              placeholder="Cole uma URL direta https ou escolha uma imagem do computador"
-                              {...field}
-                            />
-                          </FormControl>
-
                           <input
                             ref={fileInputRef}
                             type="file"
                             accept="image/*"
+                            multiple
                             className="hidden"
                             onChange={handleMediaFileChange}
                           />
@@ -617,15 +711,51 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             ) : (
                               <Upload className="w-4 h-4 mr-2" />
                             )}
-                            {isUploadingMedia ? "Enviando..." : "Escolher Imagem"}
+                            {isUploadingMedia
+                              ? "Enviando..."
+                              : "Escolher Imagens"}
                           </Button>
                         </div>
 
                         <FormDescription>
-                          Para publicar agora, a imagem precisa estar em uma URL
-                          pública https. Ao escolher uma imagem do computador, ela
-                          será enviada para o Supabase Storage.
+                          Você pode selecionar uma ou várias imagens. Com mais de
+                          uma imagem, o post será preparado como carrossel.
+                          Máximo: 10 imagens.
                         </FormDescription>
+
+                        {mediaUrls.length > 0 && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                            {mediaUrls.map((url, index) => (
+                              <div
+                                key={`${url}-${index}`}
+                                className="relative border rounded-md overflow-hidden bg-muted"
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Imagem ${index + 1}`}
+                                  className="w-full aspect-square object-cover"
+                                />
+
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="destructive"
+                                  className="absolute top-2 right-2 h-7 w-7"
+                                  onClick={() => removeMediaUrl(url)}
+                                  disabled={isPending || isUploadingMedia}
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-2 py-1">
+                                  {index === 0
+                                    ? "Capa"
+                                    : `Imagem ${index + 1}`}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         <FormMessage />
                       </FormItem>
@@ -740,7 +870,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 <p className="text-xs text-muted-foreground mb-3">
                   {isStory
                     ? "Formato Story vertical. Recomendado: imagem 1080x1920."
-                    : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
+                    : isCarousel
+                      ? `Carrossel com ${mediaUrls.length} imagens.`
+                      : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
                 </p>
 
                 <div className="border rounded-md overflow-hidden bg-background">
@@ -766,7 +898,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         onError={(event) => {
                           event.currentTarget.style.display = "none";
                           toast.error(
-                            "Não foi possível carregar essa imagem. Use uma URL direta https ou escolha uma imagem do computador."
+                            "Não foi possível carregar essa imagem. Escolha novamente uma imagem do computador."
                           );
                         }}
                       />
@@ -781,6 +913,21 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     >
                       <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
                       {isStory ? "Preview do Story" : "Preview da Mídia"}
+                    </div>
+                  )}
+
+                  {isCarousel && (
+                    <div className="px-3 pt-3">
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {mediaUrls.map((url, index) => (
+                          <img
+                            key={`${url}-thumb-${index}`}
+                            src={url}
+                            alt={`Miniatura ${index + 1}`}
+                            className="w-12 h-12 rounded-md object-cover border"
+                          />
+                        ))}
+                      </div>
                     </div>
                   )}
 
