@@ -30,7 +30,9 @@ function requestJson(
         method: options.method || "GET",
         headers: {
           "Content-Type": "application/json",
-          ...(body ? { "Content-Length": Buffer.byteLength(body).toString() } : {}),
+          ...(body
+            ? { "Content-Length": Buffer.byteLength(body).toString() }
+            : {}),
           ...(options.headers || {}),
         },
       },
@@ -82,7 +84,7 @@ function supabaseHeaders(serviceRoleKey: string) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    console.log("Callback Meta iniciado sem fetch");
+    console.log("Callback Meta iniciado para páginas e Instagram");
 
     const code = String(req.query.code || "");
     const state = String(req.query.state || "");
@@ -95,14 +97,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-    console.log("Code recebido:", Boolean(code));
-    console.log("State recebido:", Boolean(state));
-    console.log("META_APP_ID existe:", Boolean(appId));
-    console.log("META_APP_SECRET existe:", Boolean(appSecret));
-    console.log("META_REDIRECT_URI existe:", Boolean(redirectUri));
-    console.log("SUPABASE_URL existe:", Boolean(supabaseUrl));
-    console.log("SUPABASE_SERVICE_ROLE_KEY existe:", Boolean(serviceRoleKey));
 
     if (!code || !state) {
       console.error("Code ou state ausente");
@@ -126,8 +120,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `?state=eq.${encodeURIComponent(state)}` +
       `&used=eq.false` +
       `&select=*`;
-
-    console.log("Buscando state no Supabase");
 
     const stateResult = await requestJson(stateUrl, {
       method: "GET",
@@ -153,9 +145,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=expired_state");
     }
 
-    console.log("Trocando code por access token");
+    const tokenUrl = new URL(
+      "https://graph.facebook.com/v20.0/oauth/access_token"
+    );
 
-    const tokenUrl = new URL("https://graph.facebook.com/v20.0/oauth/access_token");
     tokenUrl.searchParams.set("client_id", appId);
     tokenUrl.searchParams.set("client_secret", appSecret);
     tokenUrl.searchParams.set("redirect_uri", redirectUri);
@@ -168,24 +161,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=token_error");
     }
 
-    const accessToken = tokenResult.data.access_token;
+    const userAccessToken = tokenResult.data.access_token;
 
-    console.log("Buscando perfil básico do Facebook");
+    const pagesUrl = new URL("https://graph.facebook.com/v20.0/me/accounts");
 
-    const meUrl = new URL("https://graph.facebook.com/v20.0/me");
-    meUrl.searchParams.set("fields", "id,name,email");
-    meUrl.searchParams.set("access_token", accessToken);
+    pagesUrl.searchParams.set(
+      "fields",
+      "id,name,access_token,instagram_business_account{id,username,name}"
+    );
 
-    const meResult = await requestJson(meUrl.toString());
+    pagesUrl.searchParams.set("access_token", userAccessToken);
 
-    if (!meResult.ok || !meResult.data?.id) {
-      console.error("Erro ao buscar perfil básico:", meResult.status, meResult.text);
-      return res.redirect("/settings?meta=profile_error");
+    const pagesResult = await requestJson(pagesUrl.toString());
+
+    if (!pagesResult.ok) {
+      console.error("Erro ao buscar páginas:", pagesResult.status, pagesResult.text);
+      return res.redirect("/settings?meta=pages_error");
     }
 
-    const meData = meResult.data;
+    const pages = Array.isArray(pagesResult.data?.data)
+      ? pagesResult.data.data
+      : [];
 
-    console.log("Marcando state como usado");
+    if (pages.length === 0) {
+      console.error("Nenhuma página encontrada");
+      return res.redirect("/settings?meta=no_pages");
+    }
+
+    const selectedPage =
+      pages.find((page: any) => page.name === "Social Pilot PRO") || pages[0];
+
+    const instagramAccount = selectedPage.instagram_business_account || null;
 
     const updateStateUrl =
       `${supabaseUrl}/rest/v1/meta_oauth_states` +
@@ -208,12 +214,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=state_update_error");
     }
 
-    console.log("Removendo conexão antiga");
-
     const deleteUrl =
       `${supabaseUrl}/rest/v1/social_accounts` +
       `?company_id=eq.${encodeURIComponent(oauthState.company_id)}` +
-      `&platform=eq.facebook`;
+      `&platform=in.(facebook,instagram)`;
 
     const deleteResult = await requestJson(deleteUrl, {
       method: "DELETE",
@@ -222,32 +226,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!deleteResult.ok) {
       console.error(
-        "Erro ao remover conexão antiga:",
+        "Erro ao remover conexões antigas:",
         deleteResult.status,
         deleteResult.text
       );
       return res.redirect("/settings?meta=delete_error");
     }
 
-    console.log("Salvando conexão básica do Facebook");
+    const rowsToInsert: any[] = [
+      {
+        company_id: oauthState.company_id,
+        platform: "facebook",
+        account_name: selectedPage.name || "Facebook Page",
+        account_id: selectedPage.id,
+        page_id: selectedPage.id,
+        instagram_business_account_id: instagramAccount?.id || null,
+        access_token: selectedPage.access_token || userAccessToken,
+        token_expires_at: null,
+        status: "connected",
+        is_connected: true,
+        updated_at: new Date().toISOString(),
+      },
+    ];
+
+    if (instagramAccount?.id) {
+      rowsToInsert.push({
+        company_id: oauthState.company_id,
+        platform: "instagram",
+        account_name:
+          instagramAccount.username || instagramAccount.name || "Instagram",
+        account_id: instagramAccount.id,
+        page_id: selectedPage.id,
+        instagram_business_account_id: instagramAccount.id,
+        access_token: selectedPage.access_token || userAccessToken,
+        token_expires_at: null,
+        status: "connected",
+        is_connected: true,
+        updated_at: new Date().toISOString(),
+      });
+    }
 
     const insertUrl = `${supabaseUrl}/rest/v1/social_accounts`;
 
     const insertResult = await requestJson(insertUrl, {
       method: "POST",
       headers,
-      body: {
-        company_id: oauthState.company_id,
-        platform: "facebook",
-        account_name: meData.name || "Facebook",
-        account_id: meData.id,
-        page_id: null,
-        instagram_business_account_id: null,
-        access_token: accessToken,
-        token_expires_at: null,
-        status: "connected",
-        updated_at: new Date().toISOString(),
-      },
+      body: rowsToInsert,
     });
 
     if (!insertResult.ok) {
@@ -259,7 +283,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=save_error");
     }
 
-    console.log("Conexão Meta salva com sucesso");
+    console.log("Página e Instagram salvos com sucesso");
 
     return res.redirect("/settings?meta=connected");
   } catch (error: any) {
