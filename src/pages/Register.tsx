@@ -27,12 +27,13 @@ import { Loader2 } from "lucide-react";
 
 const registerSchema = z
   .object({
-    name: z.string().min(1, { message: "Informe o nome da empresa" }),
+    name: z.string().min(1, { message: "Informe o nome da empresa ou responsável" }),
     email: z
       .string()
       .min(1, { message: "Informe seu e-mail" })
       .email({ message: "Informe um e-mail válido" }),
-    cnpj: z.string().optional().or(z.literal("")),
+    documentType: z.enum(["cpf", "cnpj"]),
+    documentNumber: z.string().optional().or(z.literal("")),
     password: z
       .string()
       .min(6, { message: "A senha precisa ter pelo menos 6 caracteres" }),
@@ -54,11 +55,14 @@ export default function Register() {
     defaultValues: {
       name: "",
       email: "",
-      cnpj: "",
+      documentType: "cnpj",
+      documentNumber: "",
       password: "",
       confirmPassword: "",
     },
   });
+
+  const documentType = form.watch("documentType");
 
   const onSubmit = async (values: RegisterFormValues) => {
     setIsLoading(true);
@@ -67,8 +71,10 @@ export default function Register() {
       await signUpWithEmail(values.email, values.password, {
         name: values.name,
         companyName: values.name,
-        cnpj: values.cnpj || "",
-      });
+        cnpj: values.documentType === "cnpj" ? values.documentNumber || "" : "",
+        documentType: values.documentType,
+        documentNumber: values.documentNumber || "",
+      } as any);
 
       toast.success("Conta criada com sucesso!");
       setLocation("/dashboard");
@@ -101,7 +107,7 @@ export default function Register() {
           </CardTitle>
 
           <CardDescription>
-            Configure sua empresa para começar a organizar seus posts com o
+            Configure sua conta para começar a organizar seus posts com o
             SocialPilot Pro
           </CardDescription>
         </CardHeader>
@@ -114,10 +120,18 @@ export default function Register() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Nome da Empresa</FormLabel>
+                    <FormLabel>
+                      {documentType === "cpf"
+                        ? "Nome Completo"
+                        : "Nome da Empresa"}
+                    </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Minha Empresa"
+                        placeholder={
+                          documentType === "cpf"
+                            ? "Seu nome completo"
+                            : "Minha Empresa"
+                        }
                         autoComplete="organization"
                         disabled={isLoading}
                         {...field}
@@ -133,10 +147,10 @@ export default function Register() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>E-mail Corporativo</FormLabel>
+                    <FormLabel>E-mail</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="contato@minhaempresa.com"
+                        placeholder="seu@email.com"
                         type="email"
                         autoComplete="email"
                         disabled={isLoading}
@@ -148,23 +162,53 @@ export default function Register() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="cnpj"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>CNPJ Opcional</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="00.000.000/0000-00"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="documentType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tipo de Cadastro</FormLabel>
+                      <FormControl>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          disabled={isLoading}
+                          value={field.value}
+                          onChange={field.onChange}
+                        >
+                          <option value="cnpj">Pessoa Jurídica - CNPJ</option>
+                          <option value="cpf">Pessoa Física - CPF</option>
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="documentNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {documentType === "cpf" ? "CPF Opcional" : "CNPJ Opcional"}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={
+                            documentType === "cpf"
+                              ? "000.000.000-00"
+                              : "00.000.000/0000-00"
+                          }
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
