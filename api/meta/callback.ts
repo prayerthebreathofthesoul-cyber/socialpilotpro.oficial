@@ -20,6 +20,7 @@ function requestJson(
 ): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
     const url = new URL(urlString);
+
     const body =
       options.body !== undefined ? JSON.stringify(options.body) : undefined;
 
@@ -36,14 +37,14 @@ function requestJson(
           ...(options.headers || {}),
         },
       },
-      (res) => {
+      (response) => {
         let responseText = "";
 
-        res.on("data", (chunk) => {
+        response.on("data", (chunk) => {
           responseText += chunk;
         });
 
-        res.on("end", () => {
+        response.on("end", () => {
           let data: any = null;
 
           try {
@@ -52,7 +53,7 @@ function requestJson(
             data = responseText;
           }
 
-          const status = res.statusCode || 500;
+          const status = response.statusCode || 500;
 
           resolve({
             status,
@@ -84,7 +85,7 @@ function supabaseHeaders(serviceRoleKey: string) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    console.log("Callback Meta iniciado para páginas e Instagram");
+    console.log("Callback Meta iniciado - Página e Instagram");
 
     const code = String(req.query.code || "");
     const state = String(req.query.state || "");
@@ -98,18 +99,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
+    console.log("Code recebido:", Boolean(code));
+    console.log("State recebido:", Boolean(state));
+    console.log("META_APP_ID existe:", Boolean(appId));
+    console.log("META_APP_SECRET existe:", Boolean(appSecret));
+    console.log("META_REDIRECT_URI existe:", Boolean(redirectUri));
+    console.log("SUPABASE_URL existe:", Boolean(supabaseUrl));
+    console.log("SUPABASE_SERVICE_ROLE_KEY existe:", Boolean(serviceRoleKey));
+
     if (!code || !state) {
-      console.error("Code ou state ausente");
       return res.redirect("/settings?meta=error");
     }
 
     if (!appId || !appSecret || !redirectUri) {
-      console.error("Variáveis da Meta ausentes");
+      console.error("Variáveis da Meta ausentes.");
       return res.redirect("/settings?meta=server_config_error");
     }
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error("Variáveis do Supabase Admin ausentes");
+      console.error("Variáveis do Supabase ausentes.");
       return res.redirect("/settings?meta=supabase_config_error");
     }
 
@@ -120,6 +128,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `?state=eq.${encodeURIComponent(state)}` +
       `&used=eq.false` +
       `&select=*`;
+
+    console.log("Buscando state no Supabase");
 
     const stateResult = await requestJson(stateUrl, {
       method: "GET",
@@ -136,14 +146,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : null;
 
     if (!oauthState) {
-      console.error("State não encontrado ou já usado");
+      console.error("State não encontrado ou já usado.");
       return res.redirect("/settings?meta=invalid_state");
     }
 
     if (new Date(oauthState.expires_at).getTime() < Date.now()) {
-      console.error("State expirado");
+      console.error("State expirado.");
       return res.redirect("/settings?meta=expired_state");
     }
+
+    console.log("Trocando code por token");
 
     const tokenUrl = new URL(
       "https://graph.facebook.com/v20.0/oauth/access_token"
@@ -163,6 +175,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const userAccessToken = tokenResult.data.access_token;
 
+    console.log("Buscando páginas e Instagram vinculado");
+
     const pagesUrl = new URL("https://graph.facebook.com/v20.0/me/accounts");
 
     pagesUrl.searchParams.set(
@@ -179,19 +193,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=pages_error");
     }
 
+    console.log("Resposta de páginas:", JSON.stringify(pagesResult.data));
+
     const pages = Array.isArray(pagesResult.data?.data)
       ? pagesResult.data.data
       : [];
 
     if (pages.length === 0) {
-      console.error("Nenhuma página encontrada");
+      console.error("Nenhuma página encontrada.");
       return res.redirect("/settings?meta=no_pages");
     }
 
     const selectedPage =
-      pages.find((page: any) => page.name === "Social Pilot PRO") || pages[0];
+      pages.find((page: any) =>
+        String(page.name || "").toLowerCase().includes("social pilot")
+      ) || pages[0];
 
     const instagramAccount = selectedPage.instagram_business_account || null;
+
+    console.log("Página selecionada:", selectedPage?.name);
+    console.log("Page ID:", selectedPage?.id);
+    console.log(
+      "Instagram encontrado:",
+      instagramAccount ? JSON.stringify(instagramAccount) : "não encontrado"
+    );
+
+    console.log("Marcando state como usado");
 
     const updateStateUrl =
       `${supabaseUrl}/rest/v1/meta_oauth_states` +
@@ -214,10 +241,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=state_update_error");
     }
 
+    console.log("Removendo conexões antigas da empresa");
+
     const deleteUrl =
       `${supabaseUrl}/rest/v1/social_accounts` +
-      `?company_id=eq.${encodeURIComponent(oauthState.company_id)}` +
-      `&platform=in.(facebook,instagram)`;
+      `?company_id=eq.${encodeURIComponent(oauthState.company_id)}`;
 
     const deleteResult = await requestJson(deleteUrl, {
       method: "DELETE",
@@ -233,6 +261,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.redirect("/settings?meta=delete_error");
     }
 
+    console.log("Preparando registros para inserir");
+
     const rowsToInsert: any[] = [
       {
         company_id: oauthState.company_id,
@@ -242,6 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         page_id: selectedPage.id,
         instagram_business_account_id: instagramAccount?.id || null,
         access_token: selectedPage.access_token || userAccessToken,
+        refresh_token: null,
         token_expires_at: null,
         status: "connected",
         is_connected: true,
@@ -259,12 +290,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         page_id: selectedPage.id,
         instagram_business_account_id: instagramAccount.id,
         access_token: selectedPage.access_token || userAccessToken,
+        refresh_token: null,
         token_expires_at: null,
         status: "connected",
         is_connected: true,
         updated_at: new Date().toISOString(),
       });
     }
+
+    console.log("Registros para inserir:", JSON.stringify(rowsToInsert));
 
     const insertUrl = `${supabaseUrl}/rest/v1/social_accounts`;
 
