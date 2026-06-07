@@ -27,6 +27,9 @@ import {
   CheckCircle2,
   ExternalLink,
   X,
+  GripVertical,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 import { supabase } from "@/lib/supabase";
@@ -65,6 +68,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
   const [isPending, setIsPending] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [draggedMediaIndex, setDraggedMediaIndex] = useState<number | null>(
+    null
+  );
 
   const [publishSuccess, setPublishSuccess] = useState<{
     postUrl: string | null;
@@ -278,6 +284,49 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     });
 
     toast.success("Imagem removida.");
+  };
+
+  const reorderMediaUrls = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+
+    const currentMediaUrls = form.getValues("mediaUrls") || [];
+
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= currentMediaUrls.length ||
+      toIndex >= currentMediaUrls.length
+    ) {
+      return;
+    }
+
+    const nextMediaUrls = [...currentMediaUrls];
+    const [movedItem] = nextMediaUrls.splice(fromIndex, 1);
+
+    nextMediaUrls.splice(toIndex, 0, movedItem);
+
+    form.setValue("mediaUrls", nextMediaUrls, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    form.setValue("mediaUrl", nextMediaUrls[0] || "", {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+
+    setPublishSuccess(null);
+  };
+
+  const moveMediaLeft = (index: number) => {
+    if (index <= 0) return;
+    reorderMediaUrls(index, index - 1);
+  };
+
+  const moveMediaRight = (index: number) => {
+    const currentMediaUrls = form.getValues("mediaUrls") || [];
+    if (index >= currentMediaUrls.length - 1) return;
+    reorderMediaUrls(index, index + 1);
   };
 
   const buildPostPayload = async (values: FormValues, action: SaveAction) => {
@@ -724,36 +773,99 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         </FormDescription>
 
                         {mediaUrls.length > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                            {mediaUrls.map((url, index) => (
-                              <div
-                                key={`${url}-${index}`}
-                                className="relative border rounded-md overflow-hidden bg-muted"
-                              >
-                                <img
-                                  src={url}
-                                  alt={`Imagem ${index + 1}`}
-                                  className="w-full aspect-square object-cover"
-                                />
+                          <div className="space-y-3 mt-4">
+                            <p className="text-xs text-muted-foreground">
+                              Arraste as imagens para mudar a ordem. A primeira
+                              imagem será a capa da postagem.
+                            </p>
 
-                                <Button
-                                  type="button"
-                                  size="icon"
-                                  variant="destructive"
-                                  className="absolute top-2 right-2 h-7 w-7"
-                                  onClick={() => removeMediaUrl(url)}
-                                  disabled={isPending || isUploadingMedia}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              {mediaUrls.map((url, index) => (
+                                <div
+                                  key={`${url}-${index}`}
+                                  draggable={!isPending && !isUploadingMedia}
+                                  onDragStart={() =>
+                                    setDraggedMediaIndex(index)
+                                  }
+                                  onDragOver={(event) =>
+                                    event.preventDefault()
+                                  }
+                                  onDrop={() => {
+                                    if (draggedMediaIndex === null) return;
+                                    reorderMediaUrls(draggedMediaIndex, index);
+                                    setDraggedMediaIndex(null);
+                                  }}
+                                  onDragEnd={() => setDraggedMediaIndex(null)}
+                                  className={`relative border rounded-md overflow-hidden bg-muted cursor-move transition ${
+                                    draggedMediaIndex === index
+                                      ? "opacity-50 ring-2 ring-primary"
+                                      : "hover:ring-2 hover:ring-primary/50"
+                                  }`}
                                 >
-                                  <X className="w-4 h-4" />
-                                </Button>
+                                  <img
+                                    src={url}
+                                    alt={`Imagem ${index + 1}`}
+                                    className="w-full aspect-square object-cover"
+                                  />
 
-                                <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-2 py-1">
-                                  {index === 0
-                                    ? "Capa"
-                                    : `Imagem ${index + 1}`}
+                                  <div className="absolute top-2 left-2 h-7 px-2 rounded-md bg-black/60 text-white flex items-center gap-1 text-xs">
+                                    <GripVertical className="w-4 h-4" />
+                                    Arrastar
+                                  </div>
+
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="destructive"
+                                    className="absolute top-2 right-2 h-7 w-7"
+                                    onClick={() => removeMediaUrl(url)}
+                                    disabled={isPending || isUploadingMedia}
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+
+                                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-2 py-2 space-y-2">
+                                    <div className="font-medium">
+                                      {index === 0
+                                        ? "Capa / Imagem 1"
+                                        : `Imagem ${index + 1}`}
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="secondary"
+                                        className="h-7 w-7"
+                                        onClick={() => moveMediaLeft(index)}
+                                        disabled={
+                                          index === 0 ||
+                                          isPending ||
+                                          isUploadingMedia
+                                        }
+                                      >
+                                        <ArrowLeft className="w-4 h-4" />
+                                      </Button>
+
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="secondary"
+                                        className="h-7 w-7"
+                                        onClick={() => moveMediaRight(index)}
+                                        disabled={
+                                          index === mediaUrls.length - 1 ||
+                                          isPending ||
+                                          isUploadingMedia
+                                        }
+                                      >
+                                        <ArrowRight className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
                         )}
 
