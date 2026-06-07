@@ -30,6 +30,7 @@ import {
   GripVertical,
   ArrowLeft,
   ArrowRight,
+  CalendarClock,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 import { supabase } from "@/lib/supabase";
@@ -476,8 +477,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
     try {
       const mediaUrls = (values.mediaUrls || []).filter(Boolean);
+      const isPublishingOrScheduling =
+        action === "publish-now" || action === "schedule";
 
-      if (action === "publish-now") {
+      if (isPublishingOrScheduling) {
         setPublishSuccess(null);
 
         if (values.platforms.includes("tiktok")) {
@@ -487,7 +490,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         }
 
         if (mediaUrls.length === 0) {
-          throw new Error("Adicione pelo menos uma imagem antes de publicar.");
+          throw new Error(
+            action === "schedule"
+              ? "Adicione pelo menos uma imagem antes de agendar."
+              : "Adicione pelo menos uma imagem antes de publicar."
+          );
         }
 
         const invalidMediaUrl = mediaUrls.find(
@@ -496,9 +503,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
         if (invalidMediaUrl) {
           throw new Error(
-            "Para publicar agora, todas as imagens precisam ser URLs públicas https. Escolha as imagens novamente para enviar ao Supabase."
+            "Todas as imagens precisam ser URLs públicas https. Escolha as imagens novamente para enviar ao Supabase."
           );
         }
+      }
+
+      if (action === "schedule" && !values.scheduledAt) {
+        throw new Error("Escolha a data e hora para agendar a postagem.");
       }
 
       const payload = await buildPostPayload(values, action);
@@ -574,7 +585,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         return;
       } else if (action === "schedule") {
         toast.success("Postagem agendada com sucesso.", {
-          duration: 3500,
+          description:
+            "Sua postagem foi salva no calendário para a data e hora escolhidas.",
+          duration: 5000,
         });
       } else {
         toast.success(
@@ -597,7 +610,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
   };
 
-  const hasScheduleDate = Boolean(form.watch("scheduledAt"));
   const mediaUrls = form.watch("mediaUrls") || [];
   const mediaPreview = mediaUrls[0] || form.watch("mediaUrl");
   const postType = form.watch("type");
@@ -1006,13 +1018,37 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Data e Hora de Agendamento</FormLabel>
-                        <FormControl>
-                          <Input type="datetime-local" {...field} />
-                        </FormControl>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <FormControl>
+                            <Input type="datetime-local" {...field} />
+                          </FormControl>
+
+                          <Button
+                            type="button"
+                            className="sm:w-auto whitespace-nowrap"
+                            onClick={form.handleSubmit((data) =>
+                              onSubmit(data, "schedule")
+                            )}
+                            disabled={
+                              isPending || isUploadingMedia || !field.value
+                            }
+                          >
+                            {isPending ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <CalendarClock className="mr-2 h-4 w-4" />
+                            )}
+                            Agendar Postagem
+                          </Button>
+                        </div>
+
                         <FormDescription>
-                          Preencha para agendar. Deixe em branco para publicar
-                          agora ou salvar como rascunho.
+                          Escolha a data e hora e clique em Agendar Postagem.
+                          Assim você não perde a imagem, título, legenda e
+                          hashtags já preenchidos.
                         </FormDescription>
+
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1034,14 +1070,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   variant="default"
                   className="w-full"
                   onClick={form.handleSubmit((data) =>
-                    onSubmit(data, hasScheduleDate ? "schedule" : "publish-now")
+                    onSubmit(data, "publish-now")
                   )}
                   disabled={isPending || isUploadingMedia}
                 >
                   {isPending && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  {hasScheduleDate ? "Agendar Postagem" : "Publicar Agora"}
+                  Publicar Agora
                 </Button>
 
                 <Button
