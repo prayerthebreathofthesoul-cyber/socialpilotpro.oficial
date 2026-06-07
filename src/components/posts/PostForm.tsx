@@ -24,6 +24,8 @@ import {
   Instagram,
   Facebook,
   Upload,
+  CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 import { supabase } from "@/lib/supabase";
@@ -61,6 +63,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
   const [isPending, setIsPending] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+
+  const [publishSuccess, setPublishSuccess] = useState<{
+    postUrl: string | null;
+    platforms: string[];
+  } | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -160,6 +167,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     const file = event.target.files?.[0];
 
     if (!file) return;
+
+    setPublishSuccess(null);
 
     if (!file.type.startsWith("image/")) {
       toast.error("Selecione um arquivo de imagem.");
@@ -269,11 +278,20 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     return null;
   };
 
+  const formatPlatformName = (platform: string) => {
+    if (platform === "instagram") return "Instagram";
+    if (platform === "facebook") return "Facebook";
+    if (platform === "tiktok") return "TikTok";
+    return platform;
+  };
+
   const onSubmit = async (values: FormValues, action: SaveAction) => {
     setIsPending(true);
 
     try {
       if (action === "publish-now") {
+        setPublishSuccess(null);
+
         if (values.platforms.includes("tiktok")) {
           throw new Error(
             "TikTok ainda não está disponível para publicação automática."
@@ -336,11 +354,16 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
         const postUrl = getPublishedPostUrl(publishResult);
 
+        setPublishSuccess({
+          postUrl,
+          platforms: values.platforms,
+        });
+
         toast.success("Publicação feita com sucesso!", {
           description: postUrl
             ? "Clique em Ver post para abrir a publicação."
             : "Seu post foi enviado para as redes sociais conectadas.",
-          duration: 7000,
+          duration: 10000,
           action: postUrl
             ? {
                 label: "Ver post",
@@ -350,10 +373,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
               }
             : undefined,
         });
-
-        setTimeout(() => {
-          onSuccess();
-        }, 2000);
 
         return;
       } else if (action === "schedule") {
@@ -386,344 +405,405 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const isStory = postType === "story";
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div className="lg:col-span-2">
-        <Card>
+    <div className="space-y-6">
+      {publishSuccess && (
+        <Card className="border-green-500 bg-green-50 shadow-xl">
           <CardContent className="p-6">
-            <Form {...form}>
-              <form className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem className="space-y-3">
-                      <FormLabel>Tipo de Postagem</FormLabel>
-                      <FormControl>
-                        <Tabs
-                          value={field.value}
-                          onValueChange={field.onChange}
-                        >
-                          <TabsList className="grid w-full grid-cols-2">
-                            <TabsTrigger value="feed">Feed</TabsTrigger>
-                            <TabsTrigger value="story">Story</TabsTrigger>
-                          </TabsList>
-                        </Tabs>
-                      </FormControl>
-
-                      <FormDescription>
-                        {field.value === "story"
-                          ? "Stories usam formato vertical. Recomendado: imagem 1080x1920."
-                          : "Feed usa formato quadrado ou horizontal. Recomendado: imagem 1080x1080 ou 1200x1200."}
-                      </FormDescription>
-
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="platforms"
-                  render={({ field }) => (
-                    <FormItem className="space-y-4">
-                      <FormLabel>Plataformas</FormLabel>
-
-                      <div className="flex flex-wrap gap-4">
-                        <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
-                          <Checkbox
-                            checked={field.value?.includes("instagram")}
-                            onCheckedChange={(checked) =>
-                              field.onChange(
-                                handlePlatformChange(
-                                  checked,
-                                  "instagram",
-                                  field.value || []
-                                )
-                              )
-                            }
-                          />
-                          <span className="font-normal flex items-center gap-2">
-                            <Instagram className="w-4 h-4 text-pink-600" />
-                            Instagram
-                          </span>
-                        </label>
-
-                        <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
-                          <Checkbox
-                            checked={field.value?.includes("facebook")}
-                            onCheckedChange={(checked) =>
-                              field.onChange(
-                                handlePlatformChange(
-                                  checked,
-                                  "facebook",
-                                  field.value || []
-                                )
-                              )
-                            }
-                          />
-                          <span className="font-normal flex items-center gap-2">
-                            <Facebook className="w-4 h-4 text-blue-600" />
-                            Facebook
-                          </span>
-                        </label>
-
-                        <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md opacity-60 cursor-not-allowed">
-                          <Checkbox
-                            checked={field.value?.includes("tiktok")}
-                            disabled
-                          />
-                          <span className="font-normal flex items-center gap-2">
-                            <SiTiktok className="w-4 h-4" />
-                            TikTok em breve
-                          </span>
-                        </label>
-                      </div>
-
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="title"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Título Interno</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Ex: Furadeira em promoção"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Usado apenas para identificação no sistema.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="mediaUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Imagem ou URL da Mídia</FormLabel>
-
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <FormControl>
-                          <Input
-                            placeholder="Cole uma URL direta https ou escolha uma imagem do computador"
-                            {...field}
-                          />
-                        </FormControl>
-
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleMediaFileChange}
-                        />
-
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={isUploadingMedia || isPending}
-                        >
-                          {isUploadingMedia ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Upload className="w-4 h-4 mr-2" />
-                          )}
-                          {isUploadingMedia ? "Enviando..." : "Escolher Imagem"}
-                        </Button>
-                      </div>
-
-                      <FormDescription>
-                        Para publicar agora, a imagem precisa estar em uma URL
-                        pública https. Ao escolher uma imagem do computador, ela
-                        será enviada para o Supabase Storage.
-                      </FormDescription>
-
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="caption"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Legenda</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Escreva a legenda do seu post..."
-                          className="min-h-[120px] resize-y"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="hashtags"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Hashtags</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="#promoção #novidade #oferta"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="scheduledAt"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Data e Hora de Agendamento</FormLabel>
-                      <FormControl>
-                        <Input type="datetime-local" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Preencha para agendar. Deixe em branco para publicar
-                        agora ou salvar como rascunho.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="lg:col-span-1 space-y-6">
-        <Card className="sticky top-6">
-          <CardContent className="p-6 space-y-4">
-            <h3 className="font-semibold text-lg border-b pb-2">Ações</h3>
-
-            <div className="space-y-3 pt-2">
-              <Button
-                type="button"
-                variant="default"
-                className="w-full"
-                onClick={form.handleSubmit((data) =>
-                  onSubmit(data, hasScheduleDate ? "schedule" : "publish-now")
-                )}
-                disabled={isPending || isUploadingMedia}
-              >
-                {isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {hasScheduleDate ? "Agendar Postagem" : "Publicar Agora"}
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={form.handleSubmit((data) => onSubmit(data, "draft"))}
-                disabled={isPending || isUploadingMedia}
-              >
-                Salvar como Rascunho
-              </Button>
-
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full text-muted-foreground"
-                onClick={onCancel}
-                disabled={isPending || isUploadingMedia}
-              >
-                Cancelar
-              </Button>
-            </div>
-
-            <div className="mt-8">
-              <h3 className="font-semibold text-sm text-muted-foreground mb-1 uppercase tracking-wider">
-                Preview Visual
-              </h3>
-
-              <p className="text-xs text-muted-foreground mb-3">
-                {isStory
-                  ? "Formato Story vertical. Recomendado: imagem 1080x1920."
-                  : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
-              </p>
-
-              <div className="border rounded-md overflow-hidden bg-background">
-                <div className="p-3 flex items-center gap-2 border-b">
-                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                    SP
-                  </div>
-                  <span className="font-medium text-sm">SocialPilot Pro</span>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                  <CheckCircle2 className="w-10 h-10 text-white" />
                 </div>
 
-                {mediaPreview ? (
-                  <div
-                    className={
-                      isStory
-                        ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex items-center justify-center overflow-hidden p-2"
-                        : "aspect-square bg-muted flex items-center justify-center overflow-hidden p-2"
+                <div>
+                  <h2 className="text-3xl font-bold text-green-800">
+                    Publicação feita com sucesso!
+                  </h2>
+
+                  <p className="text-green-700 mt-2 text-lg">
+                    Seu post foi enviado para{" "}
+                    <strong>
+                      {publishSuccess.platforms
+                        .map((platform) => formatPlatformName(platform))
+                        .join(" e ")}
+                    </strong>
+                    .
+                  </p>
+
+                  <p className="text-green-700/80 mt-2 text-sm">
+                    Agora você pode abrir o post publicado ou voltar ao
+                    calendário.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                {publishSuccess.postUrl && (
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="bg-green-700 hover:bg-green-800 text-white"
+                    onClick={() =>
+                      window.open(
+                        publishSuccess.postUrl!,
+                        "_blank",
+                        "noopener,noreferrer"
+                      )
                     }
                   >
-                    <img
-                      src={mediaPreview}
-                      className="max-w-full max-h-full object-contain bg-white rounded-md"
-                      alt="Preview da mídia"
-                      onError={(event) => {
-                        event.currentTarget.style.display = "none";
-                        toast.error(
-                          "Não foi possível carregar essa imagem. Use uma URL direta https ou escolha uma imagem do computador."
-                        );
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className={
-                      isStory
-                        ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
-                        : "aspect-square bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
-                    }
-                  >
-                    <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
-                    {isStory ? "Preview do Story" : "Preview da Mídia"}
-                  </div>
+                    <ExternalLink className="w-5 h-5 mr-2" />
+                    Ver post publicado
+                  </Button>
                 )}
 
-                <div className="p-3 text-sm space-y-2">
-                  <p className="font-semibold text-sm line-clamp-2">
-                    {form.watch("title") || "Título do post"}
-                  </p>
-
-                  <p className="line-clamp-3 whitespace-pre-wrap text-muted-foreground">
-                    {form.watch("caption") || "Sua legenda aparecerá aqui..."}
-                  </p>
-
-                  {form.watch("hashtags") && (
-                    <p className="text-blue-600 mt-1 line-clamp-2">
-                      {form.watch("hashtags")}
-                    </p>
-                  )}
-                </div>
+                <Button type="button" size="lg" variant="outline" onClick={onSuccess}>
+                  Voltar ao calendário
+                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2">
+          <Card>
+            <CardContent className="p-6">
+              <Form {...form}>
+                <form className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem className="space-y-3">
+                        <FormLabel>Tipo de Postagem</FormLabel>
+                        <FormControl>
+                          <Tabs
+                            value={field.value}
+                            onValueChange={field.onChange}
+                          >
+                            <TabsList className="grid w-full grid-cols-2">
+                              <TabsTrigger value="feed">Feed</TabsTrigger>
+                              <TabsTrigger value="story">Story</TabsTrigger>
+                            </TabsList>
+                          </Tabs>
+                        </FormControl>
+
+                        <FormDescription>
+                          {field.value === "story"
+                            ? "Stories usam formato vertical. Recomendado: imagem 1080x1920."
+                            : "Feed usa formato quadrado ou horizontal. Recomendado: imagem 1080x1080 ou 1200x1200."}
+                        </FormDescription>
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="platforms"
+                    render={({ field }) => (
+                      <FormItem className="space-y-4">
+                        <FormLabel>Plataformas</FormLabel>
+
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
+                            <Checkbox
+                              checked={field.value?.includes("instagram")}
+                              onCheckedChange={(checked) =>
+                                field.onChange(
+                                  handlePlatformChange(
+                                    checked,
+                                    "instagram",
+                                    field.value || []
+                                  )
+                                )
+                              }
+                            />
+                            <span className="font-normal flex items-center gap-2">
+                              <Instagram className="w-4 h-4 text-pink-600" />
+                              Instagram
+                            </span>
+                          </label>
+
+                          <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
+                            <Checkbox
+                              checked={field.value?.includes("facebook")}
+                              onCheckedChange={(checked) =>
+                                field.onChange(
+                                  handlePlatformChange(
+                                    checked,
+                                    "facebook",
+                                    field.value || []
+                                  )
+                                )
+                              }
+                            />
+                            <span className="font-normal flex items-center gap-2">
+                              <Facebook className="w-4 h-4 text-blue-600" />
+                              Facebook
+                            </span>
+                          </label>
+
+                          <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md opacity-60 cursor-not-allowed">
+                            <Checkbox
+                              checked={field.value?.includes("tiktok")}
+                              disabled
+                            />
+                            <span className="font-normal flex items-center gap-2">
+                              <SiTiktok className="w-4 h-4" />
+                              TikTok em breve
+                            </span>
+                          </label>
+                        </div>
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Título Interno</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Ex: Furadeira em promoção"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Usado apenas para identificação no sistema.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="mediaUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Imagem ou URL da Mídia</FormLabel>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <FormControl>
+                            <Input
+                              placeholder="Cole uma URL direta https ou escolha uma imagem do computador"
+                              {...field}
+                            />
+                          </FormControl>
+
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleMediaFileChange}
+                          />
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploadingMedia || isPending}
+                          >
+                            {isUploadingMedia ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Upload className="w-4 h-4 mr-2" />
+                            )}
+                            {isUploadingMedia ? "Enviando..." : "Escolher Imagem"}
+                          </Button>
+                        </div>
+
+                        <FormDescription>
+                          Para publicar agora, a imagem precisa estar em uma URL
+                          pública https. Ao escolher uma imagem do computador, ela
+                          será enviada para o Supabase Storage.
+                        </FormDescription>
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="caption"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Legenda</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Escreva a legenda do seu post..."
+                            className="min-h-[120px] resize-y"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="hashtags"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Hashtags</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="#promoção #novidade #oferta"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="scheduledAt"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Data e Hora de Agendamento</FormLabel>
+                        <FormControl>
+                          <Input type="datetime-local" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          Preencha para agendar. Deixe em branco para publicar
+                          agora ou salvar como rascunho.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </form>
+              </Form>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="lg:col-span-1 space-y-6">
+          <Card className="sticky top-6">
+            <CardContent className="p-6 space-y-4">
+              <h3 className="font-semibold text-lg border-b pb-2">Ações</h3>
+
+              <div className="space-y-3 pt-2">
+                <Button
+                  type="button"
+                  variant="default"
+                  className="w-full"
+                  onClick={form.handleSubmit((data) =>
+                    onSubmit(data, hasScheduleDate ? "schedule" : "publish-now")
+                  )}
+                  disabled={isPending || isUploadingMedia}
+                >
+                  {isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  {hasScheduleDate ? "Agendar Postagem" : "Publicar Agora"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={form.handleSubmit((data) => onSubmit(data, "draft"))}
+                  disabled={isPending || isUploadingMedia}
+                >
+                  Salvar como Rascunho
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-muted-foreground"
+                  onClick={onCancel}
+                  disabled={isPending || isUploadingMedia}
+                >
+                  Voltar ao calendário
+                </Button>
+              </div>
+
+              <div className="mt-8">
+                <h3 className="font-semibold text-sm text-muted-foreground mb-1 uppercase tracking-wider">
+                  Preview Visual
+                </h3>
+
+                <p className="text-xs text-muted-foreground mb-3">
+                  {isStory
+                    ? "Formato Story vertical. Recomendado: imagem 1080x1920."
+                    : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
+                </p>
+
+                <div className="border rounded-md overflow-hidden bg-background">
+                  <div className="p-3 flex items-center gap-2 border-b">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
+                      SP
+                    </div>
+                    <span className="font-medium text-sm">SocialPilot Pro</span>
+                  </div>
+
+                  {mediaPreview ? (
+                    <div
+                      className={
+                        isStory
+                          ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex items-center justify-center overflow-hidden p-2"
+                          : "aspect-square bg-muted flex items-center justify-center overflow-hidden p-2"
+                      }
+                    >
+                      <img
+                        src={mediaPreview}
+                        className="max-w-full max-h-full object-contain bg-white rounded-md"
+                        alt="Preview da mídia"
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                          toast.error(
+                            "Não foi possível carregar essa imagem. Use uma URL direta https ou escolha uma imagem do computador."
+                          );
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className={
+                        isStory
+                          ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
+                          : "aspect-square bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
+                      }
+                    >
+                      <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                      {isStory ? "Preview do Story" : "Preview da Mídia"}
+                    </div>
+                  )}
+
+                  <div className="p-3 text-sm space-y-2">
+                    <p className="font-semibold text-sm line-clamp-2">
+                      {form.watch("title") || "Título do post"}
+                    </p>
+
+                    <p className="line-clamp-3 whitespace-pre-wrap text-muted-foreground">
+                      {form.watch("caption") || "Sua legenda aparecerá aqui..."}
+                    </p>
+
+                    {form.watch("hashtags") && (
+                      <p className="text-blue-600 mt-1 line-clamp-2">
+                        {form.watch("hashtags")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
