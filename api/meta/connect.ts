@@ -19,6 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "pages_show_list",
       "pages_read_engagement",
       "instagram_basic",
+      "business_management",
     ].join(",");
 
     const authUrl = new URL("https://www.facebook.com/v20.0/dialog/oauth");
@@ -29,8 +30,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     authUrl.searchParams.set("scope", scopes);
     authUrl.searchParams.set("response_type", "code");
 
-    // Força a Meta a pedir novamente as permissões e seleção de páginas
+    // Força a Meta a pedir novamente autorização e seleção de ativos
     authUrl.searchParams.set("auth_type", "rerequest");
+
+    // Ajuda a evitar reaproveitar uma sessão/autorização antiga
+    authUrl.searchParams.set("force_authentication", "1");
 
     return res.redirect(authUrl.toString());
   } catch (error) {
