@@ -17,20 +17,6 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import {
-  useCreatePost,
-  useUpdatePost,
-  usePublishPost,
-  getListPostsQueryKey,
-  type Post,
-  type PostInputPlatformsItem,
-  type PostInputStatus,
-  type PostInputType,
-  type PostUpdatePlatformsItem,
-  type PostUpdateStatus,
-  type PostUpdateType,
-} from "@/lib/mock-api";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -40,6 +26,8 @@ import {
   Upload,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
+import { supabase } from "@/lib/supabase";
+import { useState } from "react";
 
 const platformSchema = z.enum(["instagram", "facebook", "tiktok"]);
 
@@ -60,19 +48,15 @@ type Platform = z.infer<typeof platformSchema>;
 type SaveAction = "draft" | "schedule" | "publish-now";
 
 interface PostFormProps {
-  initialData?: Post;
+  initialData?: any;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
 export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
-  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const isEditing = Boolean(initialData);
-
-  const createPost = useCreatePost();
-  const updatePost = useUpdatePost();
-  const publishPost = usePublishPost();
+  const isEditing = Boolean(initialData?.id);
+  const [isPending, setIsPending] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -80,15 +64,40 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       title: initialData?.title || "",
       caption: initialData?.caption || "",
       hashtags: initialData?.hashtags || "",
-      type: (initialData?.type as FormValues["type"]) || "feed",
-      platforms:
-        (initialData?.platforms as Platform[] | undefined) || ["instagram"],
-      mediaUrl: initialData?.mediaUrl || "",
-      scheduledAt: initialData?.scheduledAt
-        ? new Date(initialData.scheduledAt).toISOString().slice(0, 16)
-        : "",
+      type: initialData?.type || "feed",
+      platforms: initialData?.platforms || ["instagram"],
+      mediaUrl: initialData?.mediaUrl || initialData?.media_url || "",
+      scheduledAt:
+        initialData?.scheduledAt || initialData?.scheduled_at
+          ? new Date(initialData.scheduledAt || initialData.scheduled_at)
+              .toISOString()
+              .slice(0, 16)
+          : "",
     },
   });
+
+  const getCompanyId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error("Usuário não autenticado.");
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profileError || !profile?.company_id) {
+      throw new Error("Empresa do usuário não encontrada.");
+    }
+
+    return profile.company_id as string;
+  };
 
   const handlePlatformChange = (
     checked: boolean | "indeterminate",
@@ -128,10 +137,12 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
     reader.onload = () => {
       const imageDataUrl = String(reader.result || "");
+
       form.setValue("mediaUrl", imageDataUrl, {
         shouldDirty: true,
         shouldValidate: true,
       });
+
       toast.success("Imagem adicionada ao post.");
     };
 
@@ -142,72 +153,87 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     reader.readAsDataURL(file);
   };
 
-  const buildBasePayload = (values: FormValues) => ({
-    title: values.title,
-    caption: values.caption || "",
-    hashtags: values.hashtags || "",
-    type: values.type as PostInputType,
-    platforms: values.platforms as PostInputPlatformsItem[],
-    mediaUrl: values.mediaUrl || null,
-    scheduledAt: values.scheduledAt
-      ? new Date(values.scheduledAt).toISOString()
-      : null,
-  });
+  const buildPostPayload = async (values: FormValues, action: SaveAction) => {
+    const companyId = await getCompanyId();
+
+    const status =
+      action === "schedule"
+        ? "scheduled"
+        : action === "publish-now"
+          ? "published"
+          : "draft";
+
+    return {
+      company_id: companyId,
+      title: values.title,
+      caption: values.caption || "",
+      hashtags: values.hashtags || "",
+      type: values.type,
+      platforms: values.platforms,
+      media_url: values.mediaUrl || null,
+      status,
+      scheduled_at:
+        action === "schedule" && values.scheduledAt
+          ? new Date(values.scheduledAt).toISOString()
+          : null,
+      published_at:
+        action === "publish-now" ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    };
+  };
 
   const onSubmit = async (values: FormValues, action: SaveAction) => {
+    setIsPending(true);
+
     try {
-      const basePayload = buildBasePayload(values);
-      const status: PostInputStatus =
-        action === "schedule" ? "scheduled" : "draft";
+      const payload = await buildPostPayload(values, action);
 
-      if (isEditing && initialData) {
-        await updatePost.mutateAsync({
-          id: initialData.id,
-          data: {
-            ...basePayload,
-            type: basePayload.type as PostUpdateType,
-            platforms:
-              basePayload.platforms as unknown as PostUpdatePlatformsItem[],
-            status: status as PostUpdateStatus,
-          },
-        });
+      if (isEditing && initialData?.id) {
+        const { error } = await supabase
+          .from("posts")
+          .update(payload)
+          .eq("id", initialData.id);
 
-        if (action === "publish-now") {
-          await publishPost.mutateAsync({ id: initialData.id });
-          toast.success("Postagem publicada com sucesso!");
-        } else if (action === "schedule") {
-          toast.success("Postagem agendada com sucesso!");
+        if (error) throw error;
+
+        if (action === "schedule") {
+          toast.success("Postagem agendada com sucesso.");
+        } else if (action === "publish-now") {
+          toast.success(
+            "Post salvo como publicado no sistema. A publicação real nas redes será feita após conectar a API oficial."
+          );
         } else {
-          toast.success("Rascunho atualizado com sucesso!");
+          toast.success("Rascunho atualizado com sucesso.");
         }
       } else {
-        const created = await createPost.mutateAsync({
-          data: {
-            ...basePayload,
-            status,
-          },
+        const { error } = await supabase.from("posts").insert({
+          ...payload,
+          created_at: new Date().toISOString(),
         });
 
-        if (action === "publish-now") {
-          await publishPost.mutateAsync({ id: created.id });
-          toast.success("Postagem publicada com sucesso!");
-        } else if (action === "schedule") {
-          toast.success("Postagem agendada com sucesso!");
+        if (error) throw error;
+
+        if (action === "schedule") {
+          toast.success("Postagem agendada com sucesso.");
+        } else if (action === "publish-now") {
+          toast.success(
+            "Post salvo como publicado no sistema. A publicação real nas redes será feita após conectar a API oficial."
+          );
         } else {
-          toast.success("Rascunho salvo com sucesso!");
+          toast.success("Rascunho salvo com sucesso.");
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
       onSuccess();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Ocorreu um erro ao salvar a postagem.");
+      toast.error(
+        error?.message || "Ocorreu um erro ao salvar a postagem."
+      );
+    } finally {
+      setIsPending(false);
     }
   };
-
-  const isPending =
-    createPost.isPending || updatePost.isPending || publishPost.isPending;
 
   const hasScheduleDate = Boolean(form.watch("scheduledAt"));
   const mediaPreview = form.watch("mediaUrl");
@@ -421,7 +447,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       </FormControl>
                       <FormDescription>
                         Preencha para agendar. Deixe em branco para salvar como
-                        rascunho ou publicar agora.
+                        rascunho ou marcar como publicado no sistema.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -483,9 +509,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
               <div className="border rounded-md overflow-hidden bg-background">
                 <div className="p-3 flex items-center gap-2 border-b">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                    ME
+                    SP
                   </div>
-                  <span className="font-medium text-sm">Minha Empresa</span>
+                  <span className="font-medium text-sm">SocialPilot Pro</span>
                 </div>
 
                 {mediaPreview ? (
