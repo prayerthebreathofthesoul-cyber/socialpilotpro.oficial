@@ -235,6 +235,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
   const hasScheduleDate = Boolean(form.watch("scheduledAt"));
   const mediaPreview = form.watch("mediaUrl");
+  const postType = form.watch("type");
+  const isStory = postType === "story";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -260,6 +262,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                           </TabsList>
                         </Tabs>
                       </FormControl>
+
+                      <FormDescription>
+                        {field.value === "story"
+                          ? "Stories usam formato vertical. Recomendado: imagem 1080x1920."
+                          : "Feed usa formato quadrado ou horizontal. Recomendado: imagem 1080x1080 ou 1200x1200."}
+                      </FormDescription>
+
                       <FormMessage />
                     </FormItem>
                   )}
@@ -500,9 +509,15 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
             </div>
 
             <div className="mt-8">
-              <h3 className="font-semibold text-sm text-muted-foreground mb-3 uppercase tracking-wider">
+              <h3 className="font-semibold text-sm text-muted-foreground mb-1 uppercase tracking-wider">
                 Preview Visual
               </h3>
+
+              <p className="text-xs text-muted-foreground mb-3">
+                {isStory
+                  ? "Formato Story vertical. Recomendado: imagem 1080x1920."
+                  : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
+              </p>
 
               <div className="border rounded-md overflow-hidden bg-background">
                 <div className="p-3 flex items-center gap-2 border-b">
@@ -513,7 +528,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 </div>
 
                 {mediaPreview ? (
-                  <div className="aspect-square bg-muted flex items-center justify-center overflow-hidden p-2">
+                  <div
+                    className={
+                      isStory
+                        ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex items-center justify-center overflow-hidden p-2"
+                        : "aspect-square bg-muted flex items-center justify-center overflow-hidden p-2"
+                    }
+                  >
                     <img
                       src={mediaPreview}
                       className="max-w-full max-h-full object-contain bg-white rounded-md"
@@ -527,9 +548,15 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     />
                   </div>
                 ) : (
-                  <div className="aspect-square bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs">
+                  <div
+                    className={
+                      isStory
+                        ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
+                        : "aspect-square bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
+                    }
+                  >
                     <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
-                    Preview da Mídia
+                    {isStory ? "Preview do Story" : "Preview da Mídia"}
                   </div>
                 )}
 
