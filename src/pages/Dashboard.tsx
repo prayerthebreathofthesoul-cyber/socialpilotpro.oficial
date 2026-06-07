@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   CalendarClock,
   FileEdit,
@@ -49,6 +49,7 @@ type StatusCounts = {
 };
 
 export default function Dashboard() {
+  const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(true);
   const [posts, setPosts] = useState<SupabasePost[]>([]);
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({
@@ -157,6 +158,10 @@ export default function Dashboard() {
     },
   ];
 
+  const openPostEditor = (postId: string) => {
+    setLocation(`/posts/${postId}/edit`);
+  };
+
   const renderPostCard = (post: SupabasePost) => {
     const statusLabel =
       post.status === "draft"
@@ -168,7 +173,11 @@ export default function Dashboard() {
             : "Falhou";
 
     return (
-      <Card key={post.id} className="overflow-hidden">
+      <Card
+        key={post.id}
+        className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => openPostEditor(post.id)}
+      >
         {post.media_url ? (
           <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden rounded-t-xl p-2">
             <img
@@ -186,7 +195,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <CardContent className="p-4 space-y-2">
+        <CardContent className="p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-semibold line-clamp-1">{post.title}</h3>
             <span className="text-xs px-2 py-1 rounded-full bg-muted text-muted-foreground">
@@ -215,6 +224,19 @@ export default function Dashboard() {
                   locale: ptBR,
                 })}`}
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full mt-2"
+            onClick={(event) => {
+              event.stopPropagation();
+              openPostEditor(post.id);
+            }}
+          >
+            Editar Post
+          </Button>
         </CardContent>
       </Card>
     );
