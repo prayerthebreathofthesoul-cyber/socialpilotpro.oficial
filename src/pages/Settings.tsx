@@ -75,6 +75,7 @@ export default function Settings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
+  const [isConnectingMeta, setIsConnectingMeta] = useState(false);
 
   const [userEmail, setUserEmail] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -132,13 +133,25 @@ export default function Settings() {
 
       setCompany(companyData);
 
+      const { data: socialAccounts } = await supabase
+        .from("social_accounts")
+        .select("platform,status")
+        .eq("company_id", companyData.id)
+        .eq("status", "connected");
+
+      const connectedPlatforms = socialAccounts || [];
+
       setFormData({
         name: companyData.name || "",
         segment: companyData.segment || "",
         documentType: (companyData.document_type as DocumentType) || "cnpj",
         documentNumber: companyData.document_number || companyData.cnpj || "",
-        instagramConnected: false,
-        facebookConnected: false,
+        instagramConnected: connectedPlatforms.some(
+          (account) => account.platform === "instagram"
+        ),
+        facebookConnected: connectedPlatforms.some(
+          (account) => account.platform === "facebook"
+        ),
         tiktokConnected: false,
       });
     } catch (error) {
@@ -151,6 +164,34 @@ export default function Settings() {
 
   useEffect(() => {
     loadAccountData();
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const metaStatus = searchParams.get("meta");
+
+    if (metaStatus === "connected") {
+      toast.success("Conta Meta conectada com sucesso!");
+      window.history.replaceState({}, "", "/settings");
+    }
+
+    if (
+      metaStatus &&
+      metaStatus !== "connected"
+    ) {
+      const messages: Record<string, string> = {
+        error: "Não foi possível conectar com a Meta.",
+        invalid_state: "Conexão inválida. Tente conectar novamente.",
+        expired_state: "Tempo de conexão expirado. Tente novamente.",
+        token_error: "Erro ao gerar token da Meta.",
+        long_token_error: "Erro ao gerar token de longa duração da Meta.",
+        pages_error: "Erro ao buscar páginas do Facebook.",
+        no_pages: "Nenhuma página do Facebook foi encontrada nessa conta.",
+        save_error: "Erro ao salvar a conta conectada.",
+        unexpected_error: "Erro inesperado ao conectar com a Meta.",
+      };
+
+      toast.error(messages[metaStatus] || "Erro ao conectar com a Meta.");
+      window.history.replaceState({}, "", "/settings");
+    }
   }, []);
 
   const handleSaveCompany = async () => {
@@ -286,10 +327,52 @@ export default function Settings() {
     }
   };
 
-  const handleConnectSocial = (platform: "Instagram" | "Facebook") => {
-    toast.info(
-      `A conexão real com ${platform} será feita no próximo passo usando a API oficial da Meta.`
-    );
+  const handleConnectSocial = async () => {
+    if (!company || !profile) {
+      toast.error("Dados da conta não encontrados.");
+      return;
+    }
+
+    setIsConnectingMeta(true);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        toast.error("Usuário não autenticado.");
+        return;
+      }
+
+      const state =
+        crypto.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      const { error } = await supabase.from("meta_oauth_states").insert({
+        state,
+        company_id: company.id,
+        user_id: user.id,
+        expires_at: expiresAt,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      window.location.href = `/api/meta/connect?state=${encodeURIComponent(
+        state
+      )}`;
+    } catch (error: any) {
+      console.error(error);
+      toast.error(
+        error?.message || "Não foi possível iniciar a conexão com a Meta."
+      );
+      setIsConnectingMeta(false);
+    }
   };
 
   return (
@@ -489,8 +572,8 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Contas Conectadas</CardTitle>
                   <CardDescription>
-                    Conecte suas redes sociais para preparar suas postagens em um
-                    só lugar.
+                    Conecte Facebook e Instagram para preparar suas postagens em
+                    um só lugar.
                   </CardDescription>
                 </CardHeader>
 
@@ -504,17 +587,26 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">Instagram</p>
                         <p className="text-sm text-muted-foreground">
-                          Não conectado
+                          {formData.instagramConnected
+                            ? "Conectado"
+                            : "Não conectado"}
                         </p>
                       </div>
                     </div>
 
                     <Button
                       type="button"
-                      variant="outline"
-                      onClick={() => handleConnectSocial("Instagram")}
+                      variant={
+                        formData.instagramConnected ? "secondary" : "outline"
+                      }
+                      onClick={handleConnectSocial}
+                      disabled={isConnectingMeta}
                     >
-                      Conectar
+                      {isConnectingMeta
+                        ? "Conectando..."
+                        : formData.instagramConnected
+                          ? "Reconectar"
+                          : "Conectar"}
                     </Button>
                   </div>
 
@@ -527,17 +619,26 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">Facebook</p>
                         <p className="text-sm text-muted-foreground">
-                          Não conectado
+                          {formData.facebookConnected
+                            ? "Conectado"
+                            : "Não conectado"}
                         </p>
                       </div>
                     </div>
 
                     <Button
                       type="button"
-                      variant="outline"
-                      onClick={() => handleConnectSocial("Facebook")}
+                      variant={
+                        formData.facebookConnected ? "secondary" : "outline"
+                      }
+                      onClick={handleConnectSocial}
+                      disabled={isConnectingMeta}
                     >
-                      Conectar
+                      {isConnectingMeta
+                        ? "Conectando..."
+                        : formData.facebookConnected
+                          ? "Reconectar"
+                          : "Conectar"}
                     </Button>
                   </div>
 
