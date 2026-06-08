@@ -20,36 +20,23 @@ import {
   Users,
   BarChart3,
   RefreshCcw,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useListStores, useUpdateStore } from "@/lib/mock-api";
+import {
+  useListStores,
+  useUpdateStore,
+  useDeleteStore,
+  type StoreRecord,
+} from "@/lib/mock-api";
 
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
 
-type StorePlan = "free" | "premium";
-type StorePlanStatus = "active" | "blocked";
-
-type Store = {
-  id: number;
-  name?: string;
-  email?: string;
-  ownerName?: string;
-  segment?: string;
-  cnpj?: string;
-  plan?: StorePlan;
-  planStatus?: StorePlanStatus;
-  postsUsed?: number;
-  postsLimit?: number | null;
-  instagramConnected?: boolean;
-  facebookConnected?: boolean;
-  tiktokConnected?: boolean;
-};
-
 export default function Master() {
   const [password, setPassword] = useState("");
   const [search, setSearch] = useState("");
-  const [localStores, setLocalStores] = useState<Store[]>([]);
+  const [localStores, setLocalStores] = useState<StoreRecord[]>([]);
 
   const hasMasterAccess =
     typeof window !== "undefined" &&
@@ -59,9 +46,10 @@ export default function Master() {
 
   const { data: stores = [], isLoading } = useListStores();
   const updateStore = useUpdateStore();
+  const deleteStore = useDeleteStore();
 
   useEffect(() => {
-    setLocalStores(stores as Store[]);
+    setLocalStores(stores);
   }, [stores]);
 
   const filteredStores = useMemo(() => {
@@ -75,7 +63,10 @@ export default function Master() {
         store.email?.toLowerCase().includes(term) ||
         store.ownerName?.toLowerCase().includes(term) ||
         store.segment?.toLowerCase().includes(term) ||
-        store.plan?.toLowerCase().includes(term)
+        store.plan?.toLowerCase().includes(term) ||
+        store.cnpj?.toLowerCase().includes(term) ||
+        store.cpf?.toLowerCase().includes(term) ||
+        store.documentNumber?.toLowerCase().includes(term)
       );
     });
   }, [localStores, search]);
@@ -112,7 +103,7 @@ export default function Master() {
     toast.success("Você saiu do painel master.");
   }
 
-  function updateStoreLocal(storeId: number, data: Partial<Store>) {
+  function updateStoreLocal(storeId: number, data: Partial<StoreRecord>) {
     setLocalStores((currentStores) =>
       currentStores.map((store) =>
         store.id === storeId
@@ -127,7 +118,7 @@ export default function Master() {
     updateStore.mutate(
       {
         id: storeId,
-        data: data as any,
+        data,
       },
       {
         onError: () => {
@@ -179,6 +170,34 @@ export default function Master() {
     });
 
     toast.success("Uso mensal zerado.");
+  }
+
+  function removeStore(storeId: number, storeName?: string | null) {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir a empresa "${
+        storeName || "sem nome"
+      }"?\n\nEssa ação removerá a empresa do Painel Master e liberará o CPF/CNPJ para novo cadastro.`
+    );
+
+    if (!confirmed) return;
+
+    setLocalStores((currentStores) =>
+      currentStores.filter((store) => store.id !== storeId)
+    );
+
+    deleteStore.mutate(
+      {
+        id: storeId,
+      },
+      {
+        onSuccess: () => {
+          toast.success("Empresa removida com sucesso.");
+        },
+        onError: () => {
+          toast.error("Erro ao remover empresa.");
+        },
+      }
+    );
   }
 
   if (!allowed) {
@@ -297,7 +316,8 @@ export default function Master() {
                 <CardTitle>Empresas cadastradas</CardTitle>
 
                 <CardDescription>
-                  Altere planos, bloqueie contas e acompanhe o uso mensal.
+                  Altere planos, bloqueie contas, exclua empresas e acompanhe o
+                  uso mensal.
                 </CardDescription>
               </div>
 
@@ -306,7 +326,7 @@ export default function Master() {
 
                 <Input
                   className="pl-9"
-                  placeholder="Buscar empresa, email ou plano..."
+                  placeholder="Buscar empresa, email, CPF/CNPJ ou plano..."
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
@@ -328,6 +348,9 @@ export default function Master() {
                 {filteredStores.map((store) => {
                   const isPremium = store.plan === "premium";
                   const isBlocked = store.planStatus === "blocked";
+
+                  const documentNumber =
+                    store.documentNumber || store.cnpj || store.cpf || "";
 
                   const postsUsed = store.postsUsed ?? 0;
 
@@ -383,8 +406,8 @@ export default function Master() {
                             </p>
 
                             <p>
-                              <strong>CNPJ:</strong>{" "}
-                              {store.cnpj || "Não informado"}
+                              <strong>CPF/CNPJ:</strong>{" "}
+                              {documentNumber || "Não informado"}
                             </p>
                           </div>
 
@@ -489,6 +512,15 @@ export default function Master() {
                         >
                           <RefreshCcw className="mr-2 h-4 w-4" />
                           Zerar uso mensal
+                        </Button>
+
+                        <Button
+                          variant="destructive"
+                          onClick={() => removeStore(store.id, store.name)}
+                          disabled={deleteStore.isPending}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir empresa
                         </Button>
                       </div>
                     </div>
