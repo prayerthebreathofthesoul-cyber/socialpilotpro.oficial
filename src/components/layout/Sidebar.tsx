@@ -29,49 +29,140 @@ const bottomNavItems = [
   { name: "Suporte", href: "/support", icon: HelpCircle },
 ];
 
+function normalizeEmail(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function decodeJwtPayload(token: string) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    const payload = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    const decoded = JSON.parse(window.atob(payload));
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function findEmailDeep(value: any): string {
+  if (!value) return "";
+
+  if (typeof value === "string") {
+    const lowerValue = value.toLowerCase();
+
+    if (lowerValue.includes("@")) {
+      const emailMatch = lowerValue.match(
+        /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i
+      );
+
+      if (emailMatch?.[0]) {
+        return normalizeEmail(emailMatch[0]);
+      }
+    }
+
+    if (value.split(".").length === 3) {
+      const decoded = decodeJwtPayload(value);
+      const emailFromJwt = findEmailDeep(decoded);
+
+      if (emailFromJwt) return emailFromJwt;
+    }
+
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const email = findEmailDeep(item);
+      if (email) return email;
+    }
+
+    return "";
+  }
+
+  if (typeof value === "object") {
+    const directEmail =
+      value.email ||
+      value.user_email ||
+      value.userEmail ||
+      value?.user?.email ||
+      value?.profile?.email ||
+      value?.session?.user?.email ||
+      value?.currentUser?.email;
+
+    if (directEmail) {
+      return normalizeEmail(directEmail);
+    }
+
+    for (const key of Object.keys(value)) {
+      const email = findEmailDeep(value[key]);
+      if (email) return email;
+    }
+  }
+
+  return "";
+}
+
 function getStoredUserEmail() {
-  const possibleDirectKeys = [
+  const storages = [localStorage, sessionStorage];
+
+  const priorityKeys = [
     "socialpilot_user_email",
     "user_email",
     "email",
     "auth_email",
-  ];
-
-  for (const key of possibleDirectKeys) {
-    const value = localStorage.getItem(key);
-
-    if (value && value.includes("@")) {
-      return value.trim().toLowerCase();
-    }
-  }
-
-  const possibleJsonKeys = [
     "socialpilot_user",
     "user",
     "auth_user",
     "currentUser",
     "session",
+    "supabase.auth.token",
   ];
 
-  for (const key of possibleJsonKeys) {
-    const value = localStorage.getItem(key);
+  for (const storage of storages) {
+    for (const key of priorityKeys) {
+      const rawValue = storage.getItem(key);
 
-    if (!value) continue;
+      if (!rawValue) continue;
 
-    try {
-      const parsed = JSON.parse(value);
+      try {
+        const parsed = JSON.parse(rawValue);
+        const email = findEmailDeep(parsed);
 
-      const email =
-        parsed?.email ||
-        parsed?.user?.email ||
-        parsed?.profile?.email ||
-        parsed?.session?.user?.email;
+        if (email) return email;
+      } catch {
+        const email = findEmailDeep(rawValue);
 
-      if (email && typeof email === "string") {
-        return email.trim().toLowerCase();
+        if (email) return email;
       }
-    } catch {
-      // Ignora valores que não são JSON válido
+    }
+  }
+
+  for (const storage of storages) {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+
+      if (!key) continue;
+
+      const rawValue = storage.getItem(key);
+
+      if (!rawValue) continue;
+
+      try {
+        const parsed = JSON.parse(rawValue);
+        const email = findEmailDeep(parsed);
+
+        if (email) return email;
+      } catch {
+        const email = findEmailDeep(rawValue);
+
+        if (email) return email;
+      }
     }
   }
 
