@@ -12,6 +12,8 @@ import {
 import { clearAuthToken } from "@/lib/auth";
 
 const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
+const USER_EMAIL_KEY = "socialpilot_user_email";
+const MASTER_ACCESS_KEY = "socialpilot_master_access";
 
 const baseNavItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -34,148 +36,28 @@ function normalizeEmail(value: unknown) {
   return value.trim().toLowerCase();
 }
 
-function decodeJwtPayload(token: string) {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
+function getCurrentUserEmail() {
+  if (typeof window === "undefined") return "";
 
-    const payload = parts[1]
-      .replace(/-/g, "+")
-      .replace(/_/g, "/");
-
-    const decoded = JSON.parse(window.atob(payload));
-    return decoded;
-  } catch {
-    return null;
-  }
-}
-
-function findEmailDeep(value: any): string {
-  if (!value) return "";
-
-  if (typeof value === "string") {
-    const lowerValue = value.toLowerCase();
-
-    if (lowerValue.includes("@")) {
-      const emailMatch = lowerValue.match(
-        /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i
-      );
-
-      if (emailMatch?.[0]) {
-        return normalizeEmail(emailMatch[0]);
-      }
-    }
-
-    if (value.split(".").length === 3) {
-      const decoded = decodeJwtPayload(value);
-      const emailFromJwt = findEmailDeep(decoded);
-
-      if (emailFromJwt) return emailFromJwt;
-    }
-
-    return "";
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const email = findEmailDeep(item);
-      if (email) return email;
-    }
-
-    return "";
-  }
-
-  if (typeof value === "object") {
-    const directEmail =
-      value.email ||
-      value.user_email ||
-      value.userEmail ||
-      value?.user?.email ||
-      value?.profile?.email ||
-      value?.session?.user?.email ||
-      value?.currentUser?.email;
-
-    if (directEmail) {
-      return normalizeEmail(directEmail);
-    }
-
-    for (const key of Object.keys(value)) {
-      const email = findEmailDeep(value[key]);
-      if (email) return email;
-    }
-  }
-
-  return "";
-}
-
-function getStoredUserEmail() {
-  const storages = [localStorage, sessionStorage];
-
-  const priorityKeys = [
-    "socialpilot_user_email",
-    "user_email",
-    "email",
-    "auth_email",
-    "socialpilot_user",
-    "user",
-    "auth_user",
-    "currentUser",
-    "session",
-    "supabase.auth.token",
-  ];
-
-  for (const storage of storages) {
-    for (const key of priorityKeys) {
-      const rawValue = storage.getItem(key);
-
-      if (!rawValue) continue;
-
-      try {
-        const parsed = JSON.parse(rawValue);
-        const email = findEmailDeep(parsed);
-
-        if (email) return email;
-      } catch {
-        const email = findEmailDeep(rawValue);
-
-        if (email) return email;
-      }
-    }
-  }
-
-  for (const storage of storages) {
-    for (let i = 0; i < storage.length; i++) {
-      const key = storage.key(i);
-
-      if (!key) continue;
-
-      const rawValue = storage.getItem(key);
-
-      if (!rawValue) continue;
-
-      try {
-        const parsed = JSON.parse(rawValue);
-        const email = findEmailDeep(parsed);
-
-        if (email) return email;
-      } catch {
-        const email = findEmailDeep(rawValue);
-
-        if (email) return email;
-      }
-    }
-  }
-
-  return "";
+  /**
+   * CORREÇÃO IMPORTANTE:
+   * Antes o sistema procurava e-mail em várias chaves do localStorage.
+   * Isso fazia o menu Planos aparecer para contas de teste,
+   * porque o e-mail oficial podia estar salvo em algum dado antigo.
+   *
+   * Agora o menu Planos depende somente da chave oficial salva no login:
+   * socialpilot_user_email
+   */
+  return normalizeEmail(localStorage.getItem(USER_EMAIL_KEY));
 }
 
 export function Sidebar() {
   const [location, setLocation] = useLocation();
 
-  const currentUserEmail = getStoredUserEmail();
+  const currentUserEmail = getCurrentUserEmail();
 
   const isOfficialAccount =
-    currentUserEmail === OFFICIAL_EMAIL.toLowerCase();
+    currentUserEmail === normalizeEmail(OFFICIAL_EMAIL);
 
   const navItems = [
     ...baseNavItems,
@@ -184,6 +66,15 @@ export function Sidebar() {
   ];
 
   const handleLogout = () => {
+    /**
+     * CORREÇÃO:
+     * Remove também o e-mail salvo do usuário.
+     * Assim, quando outra conta entrar, ela não herda dados da conta anterior.
+     */
+    localStorage.removeItem(USER_EMAIL_KEY);
+    localStorage.removeItem(MASTER_ACCESS_KEY);
+    sessionStorage.removeItem(USER_EMAIL_KEY);
+
     clearAuthToken();
     setLocation("/login");
   };
