@@ -25,6 +25,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
 type PostStatus = "draft" | "scheduled" | "published" | "failed";
+type StatusFilter = PostStatus | "all";
 
 type SupabasePost = {
   id: string;
@@ -80,9 +81,9 @@ export default function Dashboard() {
   const [posts, setPosts] = useState<SupabasePost[]>([]);
   const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
-
-  // Esconde automaticamente alertas depois de um tempo
   const [hiddenAlertIds, setHiddenAlertIds] = useState<string[]>([]);
+  const [activeStatusFilter, setActiveStatusFilter] =
+    useState<StatusFilter>("all");
 
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({
     draft: 0,
@@ -165,21 +166,19 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
-  // Faz o aviso vermelho de falha sumir automaticamente depois de 5 minutos
   useEffect(() => {
     if (statusCounts.failed <= 0) {
       setHiddenAlertIds((prev) => prev.filter((id) => id !== "failed-posts"));
       return;
     }
 
-    // Sempre que houver falha, mostra o alerta novamente antes de iniciar o contador
     setHiddenAlertIds((prev) => prev.filter((id) => id !== "failed-posts"));
 
     const timer = window.setTimeout(() => {
       setHiddenAlertIds((prev) =>
         prev.includes("failed-posts") ? prev : [...prev, "failed-posts"]
       );
-    }, 5 * 60 * 1000); // 5 minutos
+    }, 5 * 60 * 1000);
 
     return () => window.clearTimeout(timer);
   }, [statusCounts.failed]);
@@ -235,6 +234,10 @@ export default function Dashboard() {
   );
 
   const recentPosts = [...posts]
+    .filter((post) => {
+      if (activeStatusFilter === "all") return true;
+      return post.status === activeStatusFilter;
+    })
     .sort((a, b) => {
       const getDate = (post: SupabasePost) => {
         if (post.status === "scheduled" && post.scheduled_at) {
@@ -251,6 +254,34 @@ export default function Dashboard() {
       return getDate(b) - getDate(a);
     })
     .slice(0, 4);
+
+  const getPostsTitle = () => {
+    if (activeStatusFilter === "scheduled") return "Posts Agendados";
+    if (activeStatusFilter === "draft") return "Rascunhos";
+    if (activeStatusFilter === "published") return "Posts Publicados";
+    if (activeStatusFilter === "failed") return "Posts com Falha";
+    return "Posts Recentes";
+  };
+
+  const getEmptyPostsMessage = () => {
+    if (activeStatusFilter === "scheduled") {
+      return "Você ainda não tem posts agendados.";
+    }
+
+    if (activeStatusFilter === "draft") {
+      return "Você ainda não tem rascunhos salvos.";
+    }
+
+    if (activeStatusFilter === "published") {
+      return "Você ainda não tem posts publicados.";
+    }
+
+    if (activeStatusFilter === "failed") {
+      return "Você não tem posts com falha.";
+    }
+
+    return "Você ainda não tem nenhuma postagem salva no SocialPilot Pro.";
+  };
 
   const getActivityDescription = (post: SupabasePost) => {
     if (post.status === "scheduled") {
@@ -537,69 +568,125 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("scheduled")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("scheduled");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-blue-200 ${
+              activeStatusFilter === "scheduled"
+                ? "bg-blue-50 ring-2 ring-blue-500"
+                : "bg-white"
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Agendados</CardTitle>
-              <CalendarClock className="h-4 w-4 text-blue-500" />
+              <CardTitle className="text-sm font-medium text-blue-700">
+                Agendados
+              </CardTitle>
+              <CalendarClock className="h-4 w-4 text-blue-600" />
             </CardHeader>
 
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                <div className="text-2xl font-bold">
+                <div className="text-2xl font-bold text-blue-700">
                   {statusCounts.scheduled}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("draft")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("draft");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-purple-200 ${
+              activeStatusFilter === "draft"
+                ? "bg-purple-50 ring-2 ring-purple-500"
+                : "bg-white"
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Rascunhos</CardTitle>
-              <FileEdit className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium text-purple-700">
+                Rascunhos
+              </CardTitle>
+              <FileEdit className="h-4 w-4 text-purple-600" />
             </CardHeader>
 
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                <div className="text-2xl font-bold">{statusCounts.draft}</div>
+                <div className="text-2xl font-bold text-purple-700">
+                  {statusCounts.draft}
+                </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("published")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("published");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-green-200 ${
+              activeStatusFilter === "published"
+                ? "bg-green-50 ring-2 ring-green-500"
+                : "bg-white"
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Publicados</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <CardTitle className="text-sm font-medium text-green-700">
+                Publicados
+              </CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
             </CardHeader>
 
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                <div className="text-2xl font-bold">
+                <div className="text-2xl font-bold text-green-700">
                   {statusCounts.published}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("failed")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("failed");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-red-200 ${
+              activeStatusFilter === "failed"
+                ? "bg-red-50 ring-2 ring-red-500"
+                : "bg-white"
+            }`}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-destructive">
+              <CardTitle className="text-sm font-medium text-red-700">
                 Falhos
               </CardTitle>
 
-              <AlertCircle className="h-4 w-4 text-destructive" />
+              <AlertCircle className="h-4 w-4 text-red-600" />
             </CardHeader>
 
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                <div className="text-2xl font-bold text-destructive">
+                <div className="text-2xl font-bold text-red-700">
                   {statusCounts.failed}
                 </div>
               )}
@@ -610,16 +697,28 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 gap-3">
                 <h2 className="text-xl font-semibold tracking-tight">
-                  Posts Recentes
+                  {getPostsTitle()}
                 </h2>
 
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href="/calendar">
-                    Ver Calendário <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
+                <div className="flex items-center gap-2">
+                  {activeStatusFilter !== "all" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActiveStatusFilter("all")}
+                    >
+                      Ver todos
+                    </Button>
+                  ) : null}
+
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/calendar">
+                      Ver Calendário <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
               </div>
 
               {isLoading ? (
@@ -638,11 +737,11 @@ export default function Dashboard() {
                   </div>
 
                   <h3 className="text-lg font-semibold mb-2">
-                    Nenhum post criado
+                    Nenhum post encontrado
                   </h3>
 
                   <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                    Você ainda não tem nenhuma postagem salva no SocialPilot Pro.
+                    {getEmptyPostsMessage()}
                   </p>
 
                   <Button asChild>
