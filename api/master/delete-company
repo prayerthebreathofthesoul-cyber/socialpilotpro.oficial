@@ -1,0 +1,138 @@
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl =
+  process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl) {
+  throw new Error("VITE_SUPABASE_URL não configurada na Vercel.");
+}
+
+if (!serviceRoleKey) {
+  throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada na Vercel.");
+}
+
+const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+});
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      success: false,
+      error: "Método não permitido. Use POST.",
+    });
+  }
+
+  try {
+    const { companyId, userId, email, isOfficial } = req.body;
+
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        error: "companyId é obrigatório.",
+      });
+    }
+
+    const officialEmail = "socialpilotpro.oficial@gmail.com";
+
+    if (isOfficial || email === officialEmail) {
+      return res.status(403).json({
+        success: false,
+        error: "A conta oficial não pode ser excluída.",
+      });
+    }
+
+    const { data: company, error: companyError } = await supabaseAdmin
+      .from("companies")
+      .select("*")
+      .eq("id", companyId)
+      .single();
+
+    if (companyError || !company) {
+      return res.status(404).json({
+        success: false,
+        error: "Empresa não encontrada.",
+        details: companyError?.message,
+      });
+    }
+
+    if (company.email === officialEmail || company.is_official === true) {
+      return res.status(403).json({
+        success: false,
+        error: "A conta oficial não pode ser excluída.",
+      });
+    }
+
+    const authUserId = userId || company.user_id;
+
+    /**
+     * Apaga dados relacionados à empresa.
+     * Se alguma dessas tabelas não existir no seu Supabase,
+     * a rota vai ignorar o erro e continuar.
+     */
+    const relatedTables = [
+      "posts",
+      "media",
+      "analytics",
+      "plans",
+      "integrations",
+      "social_accounts",
+      "scheduled_posts",
+    ];
+
+    for (const table of relatedTables) {
+      await supabaseAdmin.from(table).delete().eq("company_id", companyId);
+    }
+
+    /**
+     * Apaga a empresa da tabela companies.
+     */
+    const { error: deleteCompanyError } = await supabaseAdmin
+      .from("companies")
+      .delete()
+      .eq("id", companyId);
+
+    if (deleteCompanyError) {
+      return res.status(500).json({
+        success: false,
+        error: "Erro ao excluir empresa.",
+        details: deleteCompanyError.message,
+      });
+    }
+
+    /**
+     * Apaga o usuário do Supabase Auth.
+     */
+    if (authUserId) {
+      const { error: deleteUserError } =
+        await supabaseAdmin.auth.admin.deleteUser(authUserId);
+
+      if (deleteUserError) {
+        return res.status(500).json({
+          success: false,
+          error: "Empresa excluída, mas houve erro ao excluir usuário do Auth.",
+          details: deleteUserError.message,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Empresa e usuário excluídos com sucesso.",
+      deletedCompanyId: companyId,
+      deletedUserId: authUserId || null,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: "Erro interno ao excluir empresa.",
+      details: error?.message || String(error),
+    });
+  }
+}
