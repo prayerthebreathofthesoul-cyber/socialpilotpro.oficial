@@ -17,6 +17,7 @@ import Support from "@/pages/Support";
 import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
 import DataDeletion from "@/pages/DataDeletion";
+import Master from "@/pages/Master";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +39,8 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/settings" component={Settings} />
       <Route path="/support" component={Support} />
+
+      <Route path="/master" component={Master} />
 
       <Route path="/" component={Dashboard} />
       <Route component={NotFound} />
