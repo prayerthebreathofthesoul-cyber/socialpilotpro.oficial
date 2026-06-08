@@ -157,13 +157,35 @@ export default function Media() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="flex h-auto flex-wrap gap-2 bg-muted p-2">
-            <TabsTrigger value="library" className="gap-2">
+          <TabsList className="flex h-auto flex-wrap gap-3 rounded-xl bg-slate-100 p-3 shadow-sm">
+            <TabsTrigger
+              value="library"
+              className="
+                gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2
+                text-sm font-bold text-blue-700 shadow-sm transition-all
+                hover:border-blue-400 hover:bg-blue-50 hover:text-blue-800
+                data-[state=active]:border-blue-600
+                data-[state=active]:bg-blue-600
+                data-[state=active]:text-white
+                data-[state=active]:shadow-md
+              "
+            >
               <FolderOpen className="h-4 w-4" />
               Minha biblioteca
             </TabsTrigger>
 
-            <TabsTrigger value="pexels" className="gap-2">
+            <TabsTrigger
+              value="pexels"
+              className="
+                gap-2 rounded-lg border border-emerald-200 bg-white px-4 py-2
+                text-sm font-bold text-emerald-700 shadow-sm transition-all
+                hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800
+                data-[state=active]:border-emerald-600
+                data-[state=active]:bg-emerald-600
+                data-[state=active]:text-white
+                data-[state=active]:shadow-md
+              "
+            >
               <Sparkles className="h-4 w-4" />
               Banco de imagens grátis
             </TabsTrigger>
@@ -308,7 +330,7 @@ export default function Media() {
                   <Button
                     onClick={handleSearchPexels}
                     disabled={isSearchingPexels}
-                    className="sm:min-w-44"
+                    className="bg-emerald-600 text-white hover:bg-emerald-700 sm:min-w-44"
                   >
                     {isSearchingPexels ? (
                       <>
@@ -368,14 +390,14 @@ export default function Media() {
                       <div className="flex flex-col gap-2">
                         <Button
                           onClick={() => handleUseInNewPost(photo)}
-                          className="w-full"
+                          className="w-full bg-blue-600 text-white hover:bg-blue-700"
                         >
                           Usar em novo post
                         </Button>
 
                         <Button
                           variant="outline"
-                          className="w-full"
+                          className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                           onClick={() => window.open(photo.pexelsUrl, "_blank")}
                         >
                           <ExternalLink className="mr-2 h-4 w-4" />
