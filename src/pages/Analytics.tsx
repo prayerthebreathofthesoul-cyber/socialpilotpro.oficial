@@ -52,28 +52,37 @@ function getPostDate(post: any) {
     post.scheduledAt ||
     post.scheduled_at ||
     post.createdAt ||
-    post.created_at
+    post.created_at ||
+    post.date
   );
 }
 
 function getPostPlatforms(post: any): string[] {
   if (Array.isArray(post.platforms)) {
-    return post.platforms;
-  }
-
-  if (typeof post.platform === "string") {
-    return [post.platform];
+    return post.platforms.map((platform) => String(platform).toLowerCase());
   }
 
   if (typeof post.platforms === "string") {
-    return [post.platforms];
+    return [post.platforms.toLowerCase()];
+  }
+
+  if (typeof post.platform === "string") {
+    return [post.platform.toLowerCase()];
   }
 
   return [];
 }
 
 function getPostEngagement(post: any) {
-  return Number(post.engagement || post.engagementCount || post.engagement_count || 0);
+  return Number(
+    post.engagement ||
+      post.engagementCount ||
+      post.engagement_count ||
+      post.likes ||
+      post.comments ||
+      post.shares ||
+      0
+  );
 }
 
 function getPostReach(post: any) {
@@ -81,7 +90,9 @@ function getPostReach(post: any) {
 }
 
 export default function Analytics() {
-  const { data: posts = [], isLoading } = useListPosts();
+  const { data, isLoading } = useListPosts();
+
+  const posts = Array.isArray(data) ? data : [];
 
   const analytics = useMemo(() => {
     const totalPosts = posts.length;
@@ -114,6 +125,8 @@ export default function Analytics() {
         if (!rawDate) return false;
 
         const postDate = new Date(rawDate);
+
+        if (Number.isNaN(postDate.getTime())) return false;
 
         return postDate >= date && postDate < nextDate;
       });
@@ -171,9 +184,9 @@ export default function Analytics() {
     });
 
     const bestPostingHours: BestPostingHourItem[] = Array.from(hourMap.entries())
-      .map(([hour, data]) => ({
+      .map(([hour, item]) => ({
         hour,
-        engagementScore: data.engagement + data.posts * 10,
+        engagementScore: item.engagement + item.posts * 10,
       }))
       .sort((a, b) => b.engagementScore - a.engagementScore)
       .slice(0, 4);
@@ -189,19 +202,13 @@ export default function Analytics() {
     };
   }, [posts]);
 
-  const totalPosts = analytics.totalPosts;
-  const totalEngagement = analytics.totalEngagement;
-  const totalReach = analytics.totalReach;
-  const avgEngagementRate = analytics.avgEngagementRate;
-  const weeklyEngagement = analytics.weeklyEngagement;
-  const platformBreakdown = analytics.platformBreakdown;
-  const bestPostingHours = analytics.bestPostingHours;
-
   return (
     <Layout>
       <div className="space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Analytics Atualizado
+          </h1>
           <p className="mt-1 text-muted-foreground">
             Acompanhe o desempenho e engajamento das suas redes.
           </p>
@@ -223,7 +230,7 @@ export default function Analytics() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-3xl font-bold">
-                  {totalPosts.toLocaleString("pt-BR")}
+                  {analytics.totalPosts.toLocaleString("pt-BR")}
                 </div>
               )}
             </CardContent>
@@ -244,7 +251,7 @@ export default function Analytics() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-3xl font-bold">
-                  {totalEngagement.toLocaleString("pt-BR")}
+                  {analytics.totalEngagement.toLocaleString("pt-BR")}
                 </div>
               )}
             </CardContent>
@@ -265,7 +272,7 @@ export default function Analytics() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-3xl font-bold">
-                  {totalReach.toLocaleString("pt-BR")}
+                  {analytics.totalReach.toLocaleString("pt-BR")}
                 </div>
               )}
             </CardContent>
@@ -273,7 +280,9 @@ export default function Analytics() {
 
           <Card className="border-emerald-100 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-semibold">Taxa Média</CardTitle>
+              <CardTitle className="text-sm font-semibold">
+                Taxa Média
+              </CardTitle>
               <div className="rounded-full bg-emerald-100 p-2">
                 <TrendingUp className="h-4 w-4 text-emerald-700" />
               </div>
@@ -284,7 +293,7 @@ export default function Analytics() {
                 <Skeleton className="h-8 w-16" />
               ) : (
                 <div className="text-3xl font-bold">
-                  {avgEngagementRate.toFixed(1)}%
+                  {analytics.avgEngagementRate.toFixed(1)}%
                 </div>
               )}
             </CardContent>
@@ -307,7 +316,7 @@ export default function Analytics() {
                 <div className="mt-4 h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
-                      data={weeklyEngagement}
+                      data={analytics.weeklyEngagement}
                       margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
                     >
                       <CartesianGrid
@@ -379,7 +388,7 @@ export default function Analytics() {
                 <div className="mt-4 h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                      data={platformBreakdown}
+                      data={analytics.platformBreakdown}
                       margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
                     >
                       <CartesianGrid
@@ -457,13 +466,13 @@ export default function Analytics() {
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-48 w-full" />
-            ) : bestPostingHours.length === 0 ? (
+            ) : analytics.bestPostingHours.length === 0 ? (
               <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed text-center text-sm text-muted-foreground">
                 Ainda não há dados suficientes para sugerir melhores horários.
               </div>
             ) : (
               <div className="mt-4 flex flex-wrap gap-4">
-                {bestPostingHours.map((item) => (
+                {analytics.bestPostingHours.map((item) => (
                   <div
                     key={item.hour}
                     className="flex min-w-[120px] flex-1 flex-col items-center justify-center rounded-xl border bg-gradient-to-b from-card to-muted/30 p-4"
