@@ -68,6 +68,12 @@ const POSTS_KEY = "socialpilot_demo_posts";
 const MEDIA_KEY = "socialpilot_demo_media";
 const STORES_KEY = "socialpilot_demo_stores";
 
+/**
+ * Essa chave serve para limpar automaticamente os 3 posts antigos de demonstração
+ * apenas uma vez. Assim o usuário não precisa abrir o console do navegador.
+ */
+const POSTS_RESET_KEY = "socialpilot_demo_posts_reset_v3";
+
 function nowMinus(days: number) {
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -342,7 +348,12 @@ function normalizePost(item: Record<string, any>, fallbackId: number): Post {
     platforms,
     status,
     mediaUrl:
-      item.mediaUrl || item.media_url || item.imageUrl || item.image_url || item.url || null,
+      item.mediaUrl ||
+      item.media_url ||
+      item.imageUrl ||
+      item.image_url ||
+      item.url ||
+      null,
     thumbnailUrl:
       item.thumbnailUrl ||
       item.thumbnail_url ||
@@ -366,15 +377,61 @@ function normalizePost(item: Record<string, any>, fallbackId: number): Post {
   };
 }
 
-function getPosts() {
-  const savedPosts = readJson<Post[]>(POSTS_KEY, defaultPosts);
+function isOnlyOldDemoPosts(posts: unknown): boolean {
+  if (!Array.isArray(posts)) return false;
 
+  return (
+    posts.length === 3 &&
+    posts.some((post) => post?.title === "Oferta relâmpago de ferramentas") &&
+    posts.some((post) => post?.title === "Story de novidades") &&
+    posts.some((post) => post?.title === "Post publicado de demonstração")
+  );
+}
+
+/**
+ * Limpa automaticamente os 3 posts antigos de demonstração apenas uma vez.
+ * Isso evita o problema do Analytics ficar preso em "3 posts".
+ */
+function resetOldDemoPostsOnce() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const alreadyReset = localStorage.getItem(POSTS_RESET_KEY);
+
+    if (alreadyReset) return;
+
+    const raw = localStorage.getItem(POSTS_KEY);
+
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+
+        if (isOnlyOldDemoPosts(parsed)) {
+          localStorage.removeItem(POSTS_KEY);
+        }
+      } catch {
+        localStorage.removeItem(POSTS_KEY);
+      }
+    }
+
+    localStorage.setItem(POSTS_RESET_KEY, "true");
+  } catch {
+    // Se o navegador bloquear localStorage, não quebra o sistema.
+  }
+}
+
+function getPosts() {
   if (typeof window === "undefined") {
-    return savedPosts;
+    return defaultPosts;
   }
 
+  resetOldDemoPostsOnce();
+
+  const savedPosts = readJson<Post[]>(POSTS_KEY, defaultPosts);
+
   const foundPosts: Post[] = [];
-  let fallbackId = Math.max(0, ...savedPosts.map((post) => Number(post.id) || 0)) + 1;
+  let fallbackId =
+    Math.max(0, ...savedPosts.map((post) => Number(post.id) || 0)) + 1;
 
   try {
     for (let index = 0; index < localStorage.length; index += 1) {
