@@ -81,6 +81,9 @@ export default function Dashboard() {
   const [socialAccounts, setSocialAccounts] = useState<SocialAccount[]>([]);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
+  // Esconde automaticamente alertas depois de um tempo
+  const [hiddenAlertIds, setHiddenAlertIds] = useState<string[]>([]);
+
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({
     draft: 0,
     scheduled: 0,
@@ -162,6 +165,25 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
+  // Faz o aviso vermelho de falha sumir automaticamente depois de 5 minutos
+  useEffect(() => {
+    if (statusCounts.failed <= 0) {
+      setHiddenAlertIds((prev) => prev.filter((id) => id !== "failed-posts"));
+      return;
+    }
+
+    // Sempre que houver falha, mostra o alerta novamente antes de iniciar o contador
+    setHiddenAlertIds((prev) => prev.filter((id) => id !== "failed-posts"));
+
+    const timer = window.setTimeout(() => {
+      setHiddenAlertIds((prev) =>
+        prev.includes("failed-posts") ? prev : [...prev, "failed-posts"]
+      );
+    }, 5 * 60 * 1000); // 5 minutos
+
+    return () => window.clearTimeout(timer);
+  }, [statusCounts.failed]);
+
   const isAccountConnected = (platform: string) => {
     return socialAccounts.some(
       (account) =>
@@ -207,6 +229,10 @@ export default function Dashboard() {
         "O Instagram está conectado. Conecte também o Facebook para publicar nas duas redes.",
     });
   }
+
+  const visibleAlerts = alerts.filter(
+    (alert) => !hiddenAlertIds.includes(alert.id)
+  );
 
   const recentPosts = [...posts]
     .sort((a, b) => {
@@ -639,8 +665,8 @@ export default function Dashboard() {
                     <Skeleton className="h-16 w-full" />
                     <Skeleton className="h-16 w-full" />
                   </div>
-                ) : alerts.length > 0 ? (
-                  alerts.map((alert) => (
+                ) : visibleAlerts.length > 0 ? (
+                  visibleAlerts.map((alert) => (
                     <div
                       key={alert.id}
                       className={`p-3 rounded-md text-sm border-l-4 ${
