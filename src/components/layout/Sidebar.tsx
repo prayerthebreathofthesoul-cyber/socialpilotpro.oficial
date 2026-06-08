@@ -7,20 +7,90 @@ import {
   Settings,
   HelpCircle,
   LogOut,
+  Crown,
 } from "lucide-react";
 import { clearAuthToken } from "@/lib/auth";
 
-const navItems = [
+const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
+
+const baseNavItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Calendário", href: "/calendar", icon: Calendar },
   { name: "Biblioteca", href: "/media", icon: ImageIcon },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
+];
+
+const officialOnlyNavItems = [
+  { name: "Planos", href: "/plans", icon: Crown },
+];
+
+const bottomNavItems = [
   { name: "Configurações", href: "/settings", icon: Settings },
   { name: "Suporte", href: "/support", icon: HelpCircle },
 ];
 
+function getStoredUserEmail() {
+  const possibleDirectKeys = [
+    "socialpilot_user_email",
+    "user_email",
+    "email",
+    "auth_email",
+  ];
+
+  for (const key of possibleDirectKeys) {
+    const value = localStorage.getItem(key);
+
+    if (value && value.includes("@")) {
+      return value.trim().toLowerCase();
+    }
+  }
+
+  const possibleJsonKeys = [
+    "socialpilot_user",
+    "user",
+    "auth_user",
+    "currentUser",
+    "session",
+  ];
+
+  for (const key of possibleJsonKeys) {
+    const value = localStorage.getItem(key);
+
+    if (!value) continue;
+
+    try {
+      const parsed = JSON.parse(value);
+
+      const email =
+        parsed?.email ||
+        parsed?.user?.email ||
+        parsed?.profile?.email ||
+        parsed?.session?.user?.email;
+
+      if (email && typeof email === "string") {
+        return email.trim().toLowerCase();
+      }
+    } catch {
+      // Ignora valores que não são JSON válido
+    }
+  }
+
+  return "";
+}
+
 export function Sidebar() {
   const [location, setLocation] = useLocation();
+
+  const currentUserEmail = getStoredUserEmail();
+
+  const isOfficialAccount =
+    currentUserEmail === OFFICIAL_EMAIL.toLowerCase();
+
+  const navItems = [
+    ...baseNavItems,
+    ...(isOfficialAccount ? officialOnlyNavItems : []),
+    ...bottomNavItems,
+  ];
 
   const handleLogout = () => {
     clearAuthToken();
