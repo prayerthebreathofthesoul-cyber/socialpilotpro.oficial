@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import {
   useListStores,
   useUpdateStore,
@@ -49,6 +50,7 @@ export default function Master() {
   const [password, setPassword] = useState("");
   const [search, setSearch] = useState("");
   const [localStores, setLocalStores] = useState<StoreRecord[]>([]);
+  const [deletingStoreId, setDeletingStoreId] = useState<number | null>(null);
 
   const hasMasterAccess =
     typeof window !== "undefined" &&
@@ -215,7 +217,7 @@ export default function Master() {
     toast.success("Uso mensal zerado.");
   }
 
-  function removeStore(store: StoreRecord) {
+  async function removeStore(store: StoreRecord) {
     if (isOfficialStore(store)) {
       toast.error("A conta oficial não pode ser excluída.");
       return;
@@ -224,28 +226,85 @@ export default function Master() {
     const confirmed = window.confirm(
       `Tem certeza que deseja excluir a empresa "${
         store.name || "sem nome"
-      }"?\n\nEssa ação removerá a empresa do Painel Master e liberará o CPF/CNPJ para novo cadastro.`
+      }"?\n\nEssa ação removerá a empresa, o usuário vinculado e liberará o e-mail/CPF/CNPJ para novo cadastro.`
     );
 
     if (!confirmed) return;
 
-    setLocalStores((currentStores) =>
-      currentStores.filter((currentStore) => currentStore.id !== store.id)
-    );
+    try {
+      setDeletingStoreId(store.id);
 
-    deleteStore.mutate(
-      {
-        id: store.id,
-      },
-      {
-        onSuccess: () => {
-          toast.success("Empresa removida com sucesso.");
-        },
-        onError: () => {
-          toast.error("Erro ao remover empresa.");
-        },
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
       }
-    );
+
+      const storeData = store as StoreRecord & {
+        user_id?: string;
+        userId?: string;
+        company_id?: string;
+        companyId?: string;
+        auth_user_id?: string;
+        authUserId?: string;
+      };
+
+      const companyId =
+        storeData.company_id || storeData.companyId || String(storeData.id);
+
+      const userId =
+        storeData.user_id ||
+        storeData.userId ||
+        storeData.auth_user_id ||
+        storeData.authUserId ||
+        null;
+
+      const response = await fetch("/api/master/delete-company", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          companyId,
+          userId,
+          email: store.email,
+          isOfficial: false,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.error || "Erro ao excluir empresa.");
+      }
+
+      setLocalStores((currentStores) =>
+        currentStores.filter((currentStore) => currentStore.id !== store.id)
+      );
+
+      deleteStore.mutate(
+        {
+          id: store.id,
+        },
+        {
+          onError: () => {
+            console.warn(
+              "Empresa excluída na API, mas houve erro ao limpar o registro local."
+            );
+          },
+        }
+      );
+
+      toast.success("Empresa e usuário excluídos com sucesso.");
+    } catch (error: any) {
+      toast.error(error?.message || "Erro ao excluir empresa.");
+    } finally {
+      setDeletingStoreId(null);
+    }
   }
 
   if (!allowed) {
@@ -581,10 +640,12 @@ export default function Master() {
                           <Button
                             variant="destructive"
                             onClick={() => removeStore(store)}
-                            disabled={deleteStore.isPending}
+                            disabled={deletingStoreId === store.id}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir empresa
+                            {deletingStoreId === store.id
+                              ? "Excluindo..."
+                              : "Excluir empresa"}
                           </Button>
                         )}
                       </div>
