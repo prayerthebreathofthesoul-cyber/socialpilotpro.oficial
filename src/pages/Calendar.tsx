@@ -103,33 +103,31 @@ export default function Calendar() {
     return posts.filter((post: any) => isSameDay(getPostDate(post), date));
   }, [posts, date]);
 
+  const selectedDayCounts = useMemo(() => {
+    return {
+      all: selectedDayPosts.length,
+      scheduled: selectedDayPosts.filter(
+        (post: any) => getPostStatus(post) === "scheduled"
+      ).length,
+      published: selectedDayPosts.filter(
+        (post: any) => getPostStatus(post) === "published"
+      ).length,
+      draft: selectedDayPosts.filter(
+        (post: any) => getPostStatus(post) === "draft"
+      ).length,
+      failed: selectedDayPosts.filter(
+        (post: any) => getPostStatus(post) === "failed"
+      ).length,
+    };
+  }, [selectedDayPosts]);
+
   const filteredPosts = useMemo(() => {
-    return selectedDayPosts.filter((post: any) => {
-      const status = getPostStatus(post);
+    if (activeTab === "all") return selectedDayPosts;
 
-      if (activeTab !== "all" && status !== activeTab) {
-        return false;
-      }
-
-      return true;
-    });
+    return selectedDayPosts.filter(
+      (post: any) => getPostStatus(post) === activeTab
+    );
   }, [selectedDayPosts, activeTab]);
-
-  const scheduledCount =
-    selectedDayPosts.filter((post: any) => getPostStatus(post) === "scheduled")
-      .length || 0;
-
-  const publishedCount =
-    selectedDayPosts.filter((post: any) => getPostStatus(post) === "published")
-      .length || 0;
-
-  const draftCount =
-    selectedDayPosts.filter((post: any) => getPostStatus(post) === "draft")
-      .length || 0;
-
-  const failedCount =
-    selectedDayPosts.filter((post: any) => getPostStatus(post) === "failed")
-      .length || 0;
 
   const getPostsCountText = () => {
     const count = filteredPosts.length;
@@ -162,6 +160,11 @@ export default function Calendar() {
         .length,
       total: dayPosts.length,
     };
+  };
+
+  const getFilterCount = (filter: CalendarFilter) => {
+    if (filter === "all") return selectedDayCounts.all;
+    return selectedDayCounts[filter];
   };
 
   const goToNewPost = () => {
@@ -213,7 +216,7 @@ export default function Calendar() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_1fr]">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[440px_minmax(0,1fr)]">
           <div className="space-y-6">
             <Card className="overflow-hidden">
               <CardHeader className="border-b bg-muted/30">
@@ -235,7 +238,7 @@ export default function Calendar() {
                   </Button>
 
                   <div className="text-center">
-                    <p className="text-lg font-semibold capitalize">
+                    <p className="text-lg font-semibold">
                       {format(currentMonth, "MMMM yyyy", { locale: ptBR })}
                     </p>
 
@@ -369,7 +372,7 @@ export default function Calendar() {
                   <div>
                     <p className="text-xs text-blue-700">Agendados</p>
                     <p className="text-xl font-bold text-blue-800">
-                      {scheduledCount}
+                      {selectedDayCounts.scheduled}
                     </p>
                   </div>
                 </CardContent>
@@ -384,7 +387,7 @@ export default function Calendar() {
                   <div>
                     <p className="text-xs text-green-700">Publicados</p>
                     <p className="text-xl font-bold text-green-800">
-                      {publishedCount}
+                      {selectedDayCounts.published}
                     </p>
                   </div>
                 </CardContent>
@@ -399,7 +402,7 @@ export default function Calendar() {
                   <div>
                     <p className="text-xs text-gray-700">Rascunhos</p>
                     <p className="text-xl font-bold text-gray-800">
-                      {draftCount}
+                      {selectedDayCounts.draft}
                     </p>
                   </div>
                 </CardContent>
@@ -414,7 +417,7 @@ export default function Calendar() {
                   <div>
                     <p className="text-xs text-red-700">Falhos</p>
                     <p className="text-xl font-bold text-red-800">
-                      {failedCount}
+                      {selectedDayCounts.failed}
                     </p>
                   </div>
                 </CardContent>
@@ -424,9 +427,9 @@ export default function Calendar() {
 
           <Card className="min-h-[640px] overflow-hidden">
             <CardHeader className="border-b bg-muted/30">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-5">
                 <div>
-                  <CardTitle className="text-2xl capitalize">
+                  <CardTitle className="text-2xl">
                     {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
                   </CardTitle>
 
@@ -435,21 +438,32 @@ export default function Calendar() {
                   </CardDescription>
                 </div>
 
-                <div className="flex w-full flex-wrap gap-2 lg:w-auto">
-                  {filters.map((filter) => (
-                    <button
-                      key={filter.value}
-                      type="button"
-                      onClick={() => setActiveTab(filter.value)}
-                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-                        activeTab === filter.value
-                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                          : "border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"
-                      }`}
-                    >
-                      {filter.label}
-                    </button>
-                  ))}
+                <div className="rounded-xl border bg-background p-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    {filters.map((filter) => (
+                      <button
+                        key={filter.value}
+                        type="button"
+                        onClick={() => setActiveTab(filter.value)}
+                        className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                          activeTab === filter.value
+                            ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                            : "border-border bg-muted/40 text-muted-foreground hover:border-primary hover:text-primary"
+                        }`}
+                      >
+                        <span>{filter.label}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                            activeTab === filter.value
+                              ? "bg-white/20 text-primary-foreground"
+                              : "bg-background text-muted-foreground"
+                          }`}
+                        >
+                          {getFilterCount(filter.value)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </CardHeader>
