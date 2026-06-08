@@ -51,6 +51,13 @@ export default function Login() {
     try {
       await signInWithEmail(values.email, values.password);
 
+      /**
+       * CORREÇÃO:
+       * Salva o e-mail do usuário logado no localStorage.
+       * A Sidebar usa esse e-mail para identificar se deve mostrar o menu Planos.
+       */
+      localStorage.setItem("socialpilot_user_email", values.email);
+
       toast.success("Login realizado com sucesso!");
       setLocation("/dashboard");
     } catch (error: any) {
