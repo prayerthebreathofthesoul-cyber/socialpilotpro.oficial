@@ -48,6 +48,7 @@ type PexelsPhoto = {
 
 export default function Media() {
   const [, setLocation] = useLocation();
+
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("library");
 
@@ -57,8 +58,17 @@ export default function Media() {
 
   const queryClient = useQueryClient();
 
-  const { data: media = [], isLoading } = useListMedia({
-    search: search || undefined,
+  const { data: media = [], isLoading } = useListMedia();
+
+  const filteredMedia = media.filter((item: any) => {
+    const term = search.toLowerCase().trim();
+
+    if (!term) return true;
+
+    const name = String(item.name || "").toLowerCase();
+    const type = String(item.type || "").toLowerCase();
+
+    return name.includes(term) || type.includes(term);
   });
 
   const deleteMedia = useDeleteMedia({
@@ -185,7 +195,7 @@ export default function Media() {
                   <Skeleton key={index} className="h-56 rounded-xl" />
                 ))}
               </div>
-            ) : media.length === 0 ? (
+            ) : filteredMedia.length === 0 ? (
               <Card>
                 <CardContent className="flex min-h-64 flex-col items-center justify-center text-center">
                   <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground" />
@@ -199,7 +209,7 @@ export default function Media() {
               </Card>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {media.map((item: any) => (
+                {filteredMedia.map((item: any) => (
                   <Card key={item.id} className="overflow-hidden">
                     <div className="relative aspect-video bg-muted">
                       {item.type === "video" ? (
@@ -223,9 +233,13 @@ export default function Media() {
 
                         {item.createdAt && (
                           <p className="text-xs text-muted-foreground">
-                            {format(new Date(item.createdAt), "dd 'de' MMMM yyyy", {
-                              locale: ptBR,
-                            })}
+                            {format(
+                              new Date(item.createdAt),
+                              "dd 'de' MMMM yyyy",
+                              {
+                                locale: ptBR,
+                              }
+                            )}
                           </p>
                         )}
                       </div>
@@ -328,7 +342,7 @@ export default function Media() {
                     <CardContent className="space-y-3 p-4">
                       <div className="space-y-1">
                         <p className="line-clamp-1 text-sm font-medium">
-                          {photo.alt}
+                          {photo.alt || "Imagem do Pexels"}
                         </p>
 
                         <p className="line-clamp-1 text-xs text-muted-foreground">
