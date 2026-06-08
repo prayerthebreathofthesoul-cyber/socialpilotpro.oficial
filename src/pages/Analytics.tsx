@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -7,7 +7,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { useGetAnalyticsOverview } from "@/lib/mock-api";
+import { useGetDashboardSummary, useListPosts } from "@/lib/mock-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart,
@@ -39,30 +39,143 @@ type BestPostingHourItem = {
   engagementScore: number;
 };
 
+const platformLabels: Record<string, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+};
+
+function getPostDate(post: any) {
+  return post.publishedAt || post.scheduledAt || post.createdAt;
+}
+
 export default function Analytics() {
-  const {
-    data: analytics,
-    isLoading,
-    refetch,
-  } = useGetAnalyticsOverview();
+  const { data: dashboardSummary, isLoading: isLoadingDashboard } =
+    useGetDashboardSummary();
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+  const { data: posts = [], isLoading: isLoadingPosts } = useListPosts();
 
-  const totalPosts = analytics?.totalPosts ?? 0;
-  const totalEngagement = analytics?.totalEngagement ?? 0;
-  const totalReach = analytics?.totalReach ?? 0;
-  const avgEngagementRate = analytics?.avgEngagementRate ?? 0;
+  const isLoading = isLoadingDashboard || isLoadingPosts;
 
-  const weeklyEngagement: WeeklyEngagementItem[] =
-    analytics?.weeklyEngagement ?? [];
+  const statusCounts = dashboardSummary?.statusCounts;
 
-  const platformBreakdown: PlatformBreakdownItem[] =
-    analytics?.platformBreakdown ?? [];
+  const totalPostsFromDashboard =
+    (statusCounts?.scheduled || 0) +
+    (statusCounts?.draft || 0) +
+    (statusCounts?.published || 0) +
+    (statusCounts?.failed || 0);
 
-  const bestPostingHours: BestPostingHourItem[] =
-    analytics?.bestPostingHours ?? [];
+  const analytics = useMemo(() => {
+    const totalPosts = totalPostsFromDashboard || posts.length;
+
+    const publishedCount = statusCounts?.published || 0;
+
+    const postsHaveSameTotal = posts.length === totalPosts;
+
+    const totalEngagement = postsHaveSameTotal
+      ? posts.reduce((sum: number, post: any) => sum + (post.engagement || 0), 0)
+      : publishedCount * 24;
+
+    const totalReach = postsHaveSameTotal
+      ? posts.reduce((sum: number, post: any) => sum + (post.reach || 0), 0)
+      : publishedCount * 540;
+
+    const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+    const weeklyEngagement: WeeklyEngagementItem[] = Array.from({
+      length: 7,
+    }).map((_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - index));
+      date.setHours(0, 0, 0, 0);
+
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+
+      const postsOfDay = posts.filter((post: any) => {
+        const rawDate = getPostDate(post);
+
+        if (!rawDate) return false;
+
+        const postDate = new Date(rawDate);
+
+        return postDate >= date && postDate < nextDate;
+      });
+
+      return {
+        day: days[date.getDay()],
+        engagement: postsOfDay.reduce(
+          (sum: number, post: any) => sum + (post.engagement || 0),
+          0
+        ),
+        reach: postsOfDay.reduce(
+          (sum: number, post: any) => sum + (post.reach || 0),
+          0
+        ),
+      };
+    });
+
+    const platformBreakdown: PlatformBreakdownItem[] = [
+      "instagram",
+      "facebook",
+      "tiktok",
+    ].map((platform) => {
+      const platformPosts = posts.filter((post: any) =>
+        post.platforms?.includes(platform)
+      );
+
+      return {
+        platform: platformLabels[platform],
+        posts: platformPosts.length,
+        engagement: platformPosts.reduce(
+          (sum: number, post: any) => sum + (post.engagement || 0),
+          0
+        ),
+      };
+    });
+
+    const hourMap = new Map<number, { posts: number; engagement: number }>();
+
+    posts.forEach((post: any) => {
+      const rawDate = getPostDate(post);
+
+      if (!rawDate) return;
+
+      const hour = new Date(rawDate).getHours();
+      const current = hourMap.get(hour) || { posts: 0, engagement: 0 };
+
+      hourMap.set(hour, {
+        posts: current.posts + 1,
+        engagement: current.engagement + (post.engagement || 0),
+      });
+    });
+
+    const bestPostingHours: BestPostingHourItem[] = Array.from(hourMap.entries())
+      .map(([hour, data]) => ({
+        hour,
+        engagementScore: data.engagement + data.posts * 10,
+      }))
+      .sort((a, b) => b.engagementScore - a.engagementScore)
+      .slice(0, 4);
+
+    return {
+      totalPosts,
+      totalEngagement,
+      totalReach,
+      avgEngagementRate: totalReach ? (totalEngagement / totalReach) * 100 : 0,
+      weeklyEngagement,
+      platformBreakdown,
+      bestPostingHours,
+    };
+  }, [posts, totalPostsFromDashboard, statusCounts?.published]);
+
+  const totalPosts = analytics.totalPosts;
+  const totalEngagement = analytics.totalEngagement;
+  const totalReach = analytics.totalReach;
+  const avgEngagementRate = analytics.avgEngagementRate;
+  const weeklyEngagement = analytics.weeklyEngagement;
+  const platformBreakdown = analytics.platformBreakdown;
+  const bestPostingHours = analytics.bestPostingHours;
 
   return (
     <Layout>
@@ -140,9 +253,7 @@ export default function Analytics() {
 
           <Card className="border-emerald-100 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-semibold">
-                Taxa Média
-              </CardTitle>
+              <CardTitle className="text-sm font-semibold">Taxa Média</CardTitle>
               <div className="rounded-full bg-emerald-100 p-2">
                 <TrendingUp className="h-4 w-4 text-emerald-700" />
               </div>
@@ -172,10 +283,6 @@ export default function Analytics() {
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-[300px] w-full" />
-              ) : weeklyEngagement.length === 0 ? (
-                <div className="flex h-[300px] items-center justify-center rounded-xl border border-dashed text-center text-sm text-muted-foreground">
-                  Ainda não há dados suficientes para mostrar o engajamento semanal.
-                </div>
               ) : (
                 <div className="mt-4 h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -248,10 +355,6 @@ export default function Analytics() {
             <CardContent>
               {isLoading ? (
                 <Skeleton className="h-[300px] w-full" />
-              ) : platformBreakdown.length === 0 ? (
-                <div className="flex h-[300px] items-center justify-center rounded-xl border border-dashed text-center text-sm text-muted-foreground">
-                  Ainda não há dados suficientes para mostrar o desempenho por plataforma.
-                </div>
               ) : (
                 <div className="mt-4 h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
