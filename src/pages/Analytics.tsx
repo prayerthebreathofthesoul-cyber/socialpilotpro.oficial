@@ -7,7 +7,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { useGetDashboardSummary, useListPosts } from "@/lib/mock-api";
+import { useListPosts } from "@/lib/mock-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart,
@@ -46,39 +46,55 @@ const platformLabels: Record<string, string> = {
 };
 
 function getPostDate(post: any) {
-  return post.publishedAt || post.scheduledAt || post.createdAt;
+  return (
+    post.publishedAt ||
+    post.published_at ||
+    post.scheduledAt ||
+    post.scheduled_at ||
+    post.createdAt ||
+    post.created_at
+  );
+}
+
+function getPostPlatforms(post: any): string[] {
+  if (Array.isArray(post.platforms)) {
+    return post.platforms;
+  }
+
+  if (typeof post.platform === "string") {
+    return [post.platform];
+  }
+
+  if (typeof post.platforms === "string") {
+    return [post.platforms];
+  }
+
+  return [];
+}
+
+function getPostEngagement(post: any) {
+  return Number(post.engagement || post.engagementCount || post.engagement_count || 0);
+}
+
+function getPostReach(post: any) {
+  return Number(post.reach || post.reachCount || post.reach_count || 0);
 }
 
 export default function Analytics() {
-  const { data: dashboardSummary, isLoading: isLoadingDashboard } =
-    useGetDashboardSummary();
-
-  const { data: posts = [], isLoading: isLoadingPosts } = useListPosts();
-
-  const isLoading = isLoadingDashboard || isLoadingPosts;
-
-  const statusCounts = dashboardSummary?.statusCounts;
-
-  const totalPostsFromDashboard =
-    (statusCounts?.scheduled || 0) +
-    (statusCounts?.draft || 0) +
-    (statusCounts?.published || 0) +
-    (statusCounts?.failed || 0);
+  const { data: posts = [], isLoading } = useListPosts();
 
   const analytics = useMemo(() => {
-    const totalPosts = totalPostsFromDashboard || posts.length;
+    const totalPosts = posts.length;
 
-    const publishedCount = statusCounts?.published || 0;
+    const totalEngagement = posts.reduce(
+      (sum: number, post: any) => sum + getPostEngagement(post),
+      0
+    );
 
-    const postsHaveSameTotal = posts.length === totalPosts;
-
-    const totalEngagement = postsHaveSameTotal
-      ? posts.reduce((sum: number, post: any) => sum + (post.engagement || 0), 0)
-      : publishedCount * 24;
-
-    const totalReach = postsHaveSameTotal
-      ? posts.reduce((sum: number, post: any) => sum + (post.reach || 0), 0)
-      : publishedCount * 540;
+    const totalReach = posts.reduce(
+      (sum: number, post: any) => sum + getPostReach(post),
+      0
+    );
 
     const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -105,11 +121,11 @@ export default function Analytics() {
       return {
         day: days[date.getDay()],
         engagement: postsOfDay.reduce(
-          (sum: number, post: any) => sum + (post.engagement || 0),
+          (sum: number, post: any) => sum + getPostEngagement(post),
           0
         ),
         reach: postsOfDay.reduce(
-          (sum: number, post: any) => sum + (post.reach || 0),
+          (sum: number, post: any) => sum + getPostReach(post),
           0
         ),
       };
@@ -121,14 +137,14 @@ export default function Analytics() {
       "tiktok",
     ].map((platform) => {
       const platformPosts = posts.filter((post: any) =>
-        post.platforms?.includes(platform)
+        getPostPlatforms(post).includes(platform)
       );
 
       return {
         platform: platformLabels[platform],
         posts: platformPosts.length,
         engagement: platformPosts.reduce(
-          (sum: number, post: any) => sum + (post.engagement || 0),
+          (sum: number, post: any) => sum + getPostEngagement(post),
           0
         ),
       };
@@ -141,12 +157,16 @@ export default function Analytics() {
 
       if (!rawDate) return;
 
-      const hour = new Date(rawDate).getHours();
+      const postDate = new Date(rawDate);
+
+      if (Number.isNaN(postDate.getTime())) return;
+
+      const hour = postDate.getHours();
       const current = hourMap.get(hour) || { posts: 0, engagement: 0 };
 
       hourMap.set(hour, {
         posts: current.posts + 1,
-        engagement: current.engagement + (post.engagement || 0),
+        engagement: current.engagement + getPostEngagement(post),
       });
     });
 
@@ -167,7 +187,7 @@ export default function Analytics() {
       platformBreakdown,
       bestPostingHours,
     };
-  }, [posts, totalPostsFromDashboard, statusCounts?.published]);
+  }, [posts]);
 
   const totalPosts = analytics.totalPosts;
   const totalEngagement = analytics.totalEngagement;
