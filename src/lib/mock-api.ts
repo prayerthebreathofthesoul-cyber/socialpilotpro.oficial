@@ -12,6 +12,7 @@ export type PostUpdatePlatformsItem = Platform;
 
 export type StorePlan = "free" | "premium";
 export type StorePlanStatus = "active" | "blocked" | "cancelled";
+export type StoreDocumentType = "cpf" | "cnpj";
 
 export interface Post {
   id: number;
@@ -48,6 +49,9 @@ export interface StoreRecord {
   ownerName?: string | null;
   segment?: string | null;
   cnpj?: string | null;
+  cpf?: string | null;
+  documentType?: StoreDocumentType | null;
+  documentNumber?: string | null;
   instagramConnected?: boolean;
   facebookConnected?: boolean;
   tiktokConnected?: boolean;
@@ -88,6 +92,18 @@ function nowMinus(days: number) {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString();
+}
+
+function onlyNumbers(value: unknown) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function normalizeDocument(value: unknown) {
+  return onlyNumbers(value);
 }
 
 /**
@@ -144,6 +160,9 @@ const defaultStores: StoreRecord[] = [
     ownerName: "Cliente Demo",
     segment: "Ferramentas e utilidades",
     cnpj: "",
+    cpf: "",
+    documentType: "cnpj",
+    documentNumber: "",
     instagramConnected: true,
     facebookConnected: false,
     tiktokConnected: false,
@@ -226,27 +245,64 @@ function normalizePlatforms(value: unknown): Platform[] {
   return ["instagram"];
 }
 
-function normalizeStore(item: Record<string, any>, fallbackId: number): StoreRecord {
+function normalizeStore(
+  item: Record<string, any>,
+  fallbackId: number
+): StoreRecord {
   const numericId = Number(item.id);
 
   const plan: StorePlan = item.plan === "premium" ? "premium" : "free";
 
   const planStatus: StorePlanStatus =
-    item.planStatus === "blocked" ||
-    item.plan_status === "blocked"
+    item.planStatus === "blocked" || item.plan_status === "blocked"
       ? "blocked"
-      : item.planStatus === "cancelled" ||
-          item.plan_status === "cancelled"
+      : item.planStatus === "cancelled" || item.plan_status === "cancelled"
         ? "cancelled"
         : "active";
 
+  const rawDocumentType =
+    item.documentType || item.document_type || item.tipoDocumento;
+
+  const cnpjDocument = normalizeDocument(
+    item.cnpj || item.companyDocument || item.company_document
+  );
+
+  const cpfDocument = normalizeDocument(item.cpf);
+
+  const genericDocument = normalizeDocument(
+    item.documentNumber ||
+      item.document_number ||
+      item.document ||
+      item.documento ||
+      item.cpfCnpj ||
+      item.cpf_cnpj ||
+      cnpjDocument ||
+      cpfDocument
+  );
+
+  const documentType: StoreDocumentType =
+    rawDocumentType === "cpf" || genericDocument.length === 11
+      ? "cpf"
+      : "cnpj";
+
+  const documentNumber = genericDocument;
+
   return {
     id: Number.isFinite(numericId) && numericId > 0 ? numericId : fallbackId,
-    name: item.name || "Minha Empresa",
+    name: item.name || item.companyName || item.company_name || "Minha Empresa",
     email: item.email || item.ownerEmail || item.owner_email || null,
-    ownerName: item.ownerName || item.owner_name || null,
+    ownerName: item.ownerName || item.owner_name || item.name || null,
     segment: item.segment || null,
-    cnpj: item.cnpj || null,
+    cnpj:
+      documentType === "cnpj"
+        ? documentNumber
+        : cnpjDocument || item.cnpj || null,
+    cpf:
+      documentType === "cpf"
+        ? documentNumber
+        : cpfDocument || item.cpf || null,
+    documentType,
+    documentNumber,
     instagramConnected: Boolean(item.instagramConnected),
     facebookConnected: Boolean(item.facebookConnected),
     tiktokConnected: Boolean(item.tiktokConnected),
@@ -459,6 +515,30 @@ function setStores(stores: StoreRecord[]) {
   return writeJson(STORES_KEY, normalizedStores);
 }
 
+function getCurrentStore() {
+  const stores = getStores();
+
+  if (!stores.length) {
+    setStores(defaultStores);
+    return defaultStores[0];
+  }
+
+  const currentEmail =
+    typeof window !== "undefined"
+      ? normalizeEmail(localStorage.getItem("socialpilot_user_email"))
+      : "";
+
+  if (currentEmail) {
+    const storeByEmail = stores.find(
+      (store) => normalizeEmail(store.email) === currentEmail
+    );
+
+    if (storeByEmail) return storeByEmail;
+  }
+
+  return stores[0];
+}
+
 function syncCurrentStoreUsage(postsCount: number) {
   if (typeof window === "undefined") return;
 
@@ -467,8 +547,16 @@ function syncCurrentStoreUsage(postsCount: number) {
 
     if (!stores.length) return;
 
+    const currentEmail = normalizeEmail(
+      localStorage.getItem("socialpilot_user_email")
+    );
+
     const updatedStores = stores.map((store, index) => {
-      if (index !== 0) return store;
+      const isCurrentStore = currentEmail
+        ? normalizeEmail(store.email) === currentEmail
+        : index === 0;
+
+      if (!isCurrentStore) return store;
 
       return {
         ...store,
@@ -480,17 +568,6 @@ function syncCurrentStoreUsage(postsCount: number) {
   } catch {
     // Não quebra o app caso o localStorage esteja indisponível.
   }
-}
-
-function getCurrentStore() {
-  const stores = getStores();
-
-  if (!stores.length) {
-    setStores(defaultStores);
-    return defaultStores[0];
-  }
-
-  return stores[0];
 }
 
 function getPostDate(post: Post) {
@@ -555,7 +632,7 @@ export function useCreatePost() {
 
       if (currentStore.plan !== "premium") {
         const postsLimit = currentStore.postsLimit ?? 15;
-        const postsUsed = posts.length;
+        const postsUsed = currentStore.postsUsed ?? posts.length;
 
         if (postsUsed >= postsLimit) {
           throw new Error(
@@ -586,6 +663,27 @@ export function useCreatePost() {
       };
 
       setPosts([created, ...posts]);
+
+      const stores = getStores();
+      const currentEmail =
+        typeof window !== "undefined"
+          ? normalizeEmail(localStorage.getItem("socialpilot_user_email"))
+          : "";
+
+      const updatedStores = stores.map((store, index) => {
+        const isCurrentStore = currentEmail
+          ? normalizeEmail(store.email) === currentEmail
+          : index === 0;
+
+        if (!isCurrentStore) return store;
+
+        return {
+          ...store,
+          postsUsed: (store.postsUsed ?? 0) + 1,
+        };
+      });
+
+      setStores(updatedStores);
 
       return created;
     },
@@ -741,21 +839,8 @@ export function useListStores(_options?: QueryOptions) {
   return useQuery({
     queryKey: getListStoresQueryKey(),
     queryFn: async () => {
-      const posts = getPosts();
       const stores = getStores();
-
-      const updatedStores = stores.map((store, index) => {
-        if (index !== 0) return store;
-
-        return {
-          ...store,
-          postsUsed: posts.length,
-        };
-      });
-
-      setStores(updatedStores);
-
-      return updatedStores;
+      return stores;
     },
   });
 }
@@ -790,6 +875,41 @@ export function useUpdateStore() {
       setStores(stores);
 
       return updated;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: getGetDashboardSummaryQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetAnalyticsOverviewQueryKey(),
+      });
+    },
+  });
+}
+
+export function useDeleteStore() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const stores = getStores();
+
+      const storeToDelete = stores.find((store) => store.id === id);
+
+      if (!storeToDelete) {
+        throw new Error("Empresa não encontrada.");
+      }
+
+      const updatedStores = stores.filter((store) => store.id !== id);
+
+      setStores(updatedStores);
+
+      return {
+        ok: true,
+        deletedStore: storeToDelete,
+      };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
@@ -848,7 +968,7 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
 
       if (currentStore.plan !== "premium") {
         const limit = currentStore.postsLimit ?? 15;
-        const used = posts.length;
+        const used = currentStore.postsUsed ?? posts.length;
 
         if (used >= limit) {
           alerts.push({
@@ -887,8 +1007,9 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
         recentActivity,
         plan: currentStore.plan ?? "free",
         planStatus: currentStore.planStatus ?? "active",
-        postsLimit: currentStore.plan === "premium" ? null : currentStore.postsLimit ?? 15,
-        postsUsed: posts.length,
+        postsLimit:
+          currentStore.plan === "premium" ? null : currentStore.postsLimit ?? 15,
+        postsUsed: currentStore.postsUsed ?? posts.length,
       };
     },
   });
