@@ -10,6 +10,9 @@ export type PostUpdateStatus = PostStatus;
 export type PostUpdateType = PostType;
 export type PostUpdatePlatformsItem = Platform;
 
+export type StorePlan = "free" | "premium";
+export type StorePlanStatus = "active" | "blocked" | "cancelled";
+
 export interface Post {
   id: number;
   title: string;
@@ -41,12 +44,19 @@ export interface MediaFile {
 export interface StoreRecord {
   id: number;
   name: string;
+  email?: string | null;
+  ownerName?: string | null;
   segment?: string | null;
   cnpj?: string | null;
   instagramConnected?: boolean;
   facebookConnected?: boolean;
   tiktokConnected?: boolean;
-  plan?: "free" | "premium";
+  plan?: StorePlan;
+  planStatus?: StorePlanStatus;
+  postsLimit?: number | null;
+  postsUsed?: number;
+  createdAt?: string;
+  isMaster?: boolean;
 }
 
 export interface DashboardAlert {
@@ -82,9 +92,8 @@ function nowMinus(days: number) {
 
 /**
  * IMPORTANTE:
- * Antes havia 3 posts fixos aqui.
- * Isso fazia Posts, Dashboard e Analytics ficarem presos em 3 posts.
- * Agora começa vazio.
+ * Não usamos mais posts fixos.
+ * Isso evita Dashboard e Analytics ficarem presos em 3 posts.
  */
 const defaultPosts: Post[] = [];
 
@@ -131,12 +140,19 @@ const defaultStores: StoreRecord[] = [
   {
     id: 1,
     name: "Minha Empresa",
+    email: "cliente@socialpilotpro.com",
+    ownerName: "Cliente Demo",
     segment: "Ferramentas e utilidades",
     cnpj: "",
     instagramConnected: true,
     facebookConnected: false,
     tiktokConnected: false,
     plan: "free",
+    planStatus: "active",
+    postsLimit: 15,
+    postsUsed: 0,
+    createdAt: nowMinus(1),
+    isMaster: false,
   },
 ];
 
@@ -208,6 +224,51 @@ function normalizePlatforms(value: unknown): Platform[] {
   }
 
   return ["instagram"];
+}
+
+function normalizeStore(item: Record<string, any>, fallbackId: number): StoreRecord {
+  const numericId = Number(item.id);
+
+  const plan: StorePlan = item.plan === "premium" ? "premium" : "free";
+
+  const planStatus: StorePlanStatus =
+    item.planStatus === "blocked" ||
+    item.plan_status === "blocked"
+      ? "blocked"
+      : item.planStatus === "cancelled" ||
+          item.plan_status === "cancelled"
+        ? "cancelled"
+        : "active";
+
+  return {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : fallbackId,
+    name: item.name || "Minha Empresa",
+    email: item.email || item.ownerEmail || item.owner_email || null,
+    ownerName: item.ownerName || item.owner_name || null,
+    segment: item.segment || null,
+    cnpj: item.cnpj || null,
+    instagramConnected: Boolean(item.instagramConnected),
+    facebookConnected: Boolean(item.facebookConnected),
+    tiktokConnected: Boolean(item.tiktokConnected),
+    plan,
+    planStatus,
+    postsLimit:
+      plan === "premium"
+        ? null
+        : Number.isFinite(Number(item.postsLimit || item.posts_limit))
+          ? Number(item.postsLimit || item.posts_limit)
+          : 15,
+    postsUsed: Number.isFinite(Number(item.postsUsed || item.posts_used))
+      ? Number(item.postsUsed || item.posts_used)
+      : 0,
+    createdAt:
+      item.createdAt ||
+      item.created_at ||
+      item.updatedAt ||
+      item.updated_at ||
+      new Date().toISOString(),
+    isMaster: Boolean(item.isMaster || item.is_master),
+  };
 }
 
 function normalizePost(item: Record<string, any>, fallbackId: number): Post {
@@ -283,7 +344,7 @@ function getPosts() {
     const raw = localStorage.getItem(POSTS_KEY);
 
     if (!raw) {
-      localStorage.setItem(POSTS_KEY, JSON.stringify([]));
+      localStorage.setItem(POSTS_KEY, JSON.stringify(defaultPosts));
       return [];
     }
 
@@ -298,10 +359,6 @@ function getPosts() {
       normalizePost(post as unknown as Record<string, any>, index + 1)
     );
 
-    /**
-     * Remove definitivamente os 3 posts antigos de demonstração.
-     * Assim eles não voltam mais para Posts, Dashboard e Analytics.
-     */
     const realPosts = normalizedPosts.filter((post) => !isDemoPost(post));
 
     const uniquePostsMap = new Map<string, Post>();
@@ -346,6 +403,8 @@ function setPosts(posts: Post[]) {
     )
     .filter((post) => !isDemoPost(post));
 
+  syncCurrentStoreUsage(normalizedPosts.length);
+
   return writeJson(POSTS_KEY, normalizedPosts);
 }
 
@@ -358,11 +417,80 @@ function setMedia(media: MediaFile[]) {
 }
 
 function getStores() {
-  return readJson<StoreRecord[]>(STORES_KEY, defaultStores);
+  if (typeof window === "undefined") {
+    return defaultStores;
+  }
+
+  try {
+    const raw = localStorage.getItem(STORES_KEY);
+
+    if (!raw) {
+      localStorage.setItem(STORES_KEY, JSON.stringify(defaultStores));
+      return defaultStores;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(STORES_KEY, JSON.stringify(defaultStores));
+      return defaultStores;
+    }
+
+    const normalizedStores = parsed.map((store, index) =>
+      normalizeStore(store as unknown as Record<string, any>, index + 1)
+    );
+
+    const stores = normalizedStores.length > 0 ? normalizedStores : defaultStores;
+
+    writeJson(STORES_KEY, stores);
+
+    return stores;
+  } catch {
+    localStorage.setItem(STORES_KEY, JSON.stringify(defaultStores));
+    return defaultStores;
+  }
 }
 
 function setStores(stores: StoreRecord[]) {
-  return writeJson(STORES_KEY, stores);
+  const normalizedStores = stores.map((store, index) =>
+    normalizeStore(store as unknown as Record<string, any>, index + 1)
+  );
+
+  return writeJson(STORES_KEY, normalizedStores);
+}
+
+function syncCurrentStoreUsage(postsCount: number) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const stores = getStores();
+
+    if (!stores.length) return;
+
+    const updatedStores = stores.map((store, index) => {
+      if (index !== 0) return store;
+
+      return {
+        ...store,
+        postsUsed: postsCount,
+      };
+    });
+
+    writeJson(STORES_KEY, updatedStores);
+  } catch {
+    // Não quebra o app caso o localStorage esteja indisponível.
+  }
+}
+
+function getCurrentStore() {
+  const stores = getStores();
+
+  if (!stores.length) {
+    setStores(defaultStores);
+    return defaultStores[0];
+  }
+
+  return stores[0];
 }
 
 function getPostDate(post: Post) {
@@ -411,6 +539,31 @@ export function useCreatePost() {
   return useMutation({
     mutationFn: async ({ data }: { data: Partial<Post> }) => {
       const posts = getPosts();
+      const currentStore = getCurrentStore();
+
+      if (currentStore.planStatus === "blocked") {
+        throw new Error(
+          "Esta conta está bloqueada. Entre em contato com o suporte."
+        );
+      }
+
+      if (currentStore.planStatus === "cancelled") {
+        throw new Error(
+          "Esta conta está cancelada. Entre em contato com o suporte."
+        );
+      }
+
+      if (currentStore.plan !== "premium") {
+        const postsLimit = currentStore.postsLimit ?? 15;
+        const postsUsed = posts.length;
+
+        if (postsUsed >= postsLimit) {
+          throw new Error(
+            `Limite do plano gratuito atingido. Seu plano permite até ${postsLimit} posts por mês.`
+          );
+        }
+      }
+
       const status = normalizeStatus(data.status);
       const metrics = generatePostMetrics(status);
 
@@ -438,6 +591,7 @@ export function useCreatePost() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
       queryClient.invalidateQueries({
         queryKey: getGetDashboardSummaryQueryKey(),
       });
@@ -515,6 +669,7 @@ export function useUpdatePost() {
       queryClient.invalidateQueries({
         queryKey: getGetAnalyticsOverviewQueryKey(),
       });
+      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
     },
   });
 }
@@ -556,6 +711,7 @@ export function usePublishPost() {
       queryClient.invalidateQueries({
         queryKey: getGetAnalyticsOverviewQueryKey(),
       });
+      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
     },
   });
 }
@@ -584,7 +740,23 @@ export function useDeleteMedia() {
 export function useListStores(_options?: QueryOptions) {
   return useQuery({
     queryKey: getListStoresQueryKey(),
-    queryFn: async () => getStores(),
+    queryFn: async () => {
+      const posts = getPosts();
+      const stores = getStores();
+
+      const updatedStores = stores.map((store, index) => {
+        if (index !== 0) return store;
+
+        return {
+          ...store,
+          postsUsed: posts.length,
+        };
+      });
+
+      setStores(updatedStores);
+
+      return updatedStores;
+    },
   });
 }
 
@@ -604,7 +776,13 @@ export function useUpdateStore() {
       const stores = getStores().map((store) => {
         if (store.id !== id) return store;
 
-        updated = { ...store, ...data };
+        updated = normalizeStore(
+          {
+            ...store,
+            ...data,
+          },
+          id
+        );
 
         return updated;
       });
@@ -615,6 +793,13 @@ export function useUpdateStore() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: getGetDashboardSummaryQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetAnalyticsOverviewQueryKey(),
+      });
     },
   });
 }
@@ -624,6 +809,7 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
     queryKey: getGetDashboardSummaryQueryKey(),
     queryFn: async () => {
       const posts = getPosts();
+      const currentStore = getCurrentStore();
 
       const statusCounts = posts.reduce(
         (acc, post) => {
@@ -651,6 +837,35 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
         },
       ];
 
+      if (currentStore.planStatus === "blocked") {
+        alerts.push({
+          id: 2,
+          severity: "error",
+          message:
+            "Sua conta está bloqueada. Entre em contato com o suporte para reativação.",
+        });
+      }
+
+      if (currentStore.plan !== "premium") {
+        const limit = currentStore.postsLimit ?? 15;
+        const used = posts.length;
+
+        if (used >= limit) {
+          alerts.push({
+            id: 3,
+            severity: "warning",
+            message:
+              "Você atingiu o limite do plano gratuito. Faça upgrade para continuar criando posts.",
+          });
+        } else if (used >= limit - 3) {
+          alerts.push({
+            id: 4,
+            severity: "warning",
+            message: `Atenção: você já usou ${used} de ${limit} posts do plano gratuito.`,
+          });
+        }
+      }
+
       const recentActivity: RecentActivity[] = posts.slice(0, 3).map((post) => ({
         id: post.id,
         action:
@@ -670,6 +885,10 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
         upcomingPosts,
         alerts,
         recentActivity,
+        plan: currentStore.plan ?? "free",
+        planStatus: currentStore.planStatus ?? "active",
+        postsLimit: currentStore.plan === "premium" ? null : currentStore.postsLimit ?? 15,
+        postsUsed: posts.length,
       };
     },
   });
