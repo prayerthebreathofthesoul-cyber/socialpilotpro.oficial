@@ -7,7 +7,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { useListPosts } from "@/lib/mock-api";
+import { useGetDashboardSummary, useListPosts } from "@/lib/mock-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart,
@@ -90,12 +90,25 @@ function getPostReach(post: any) {
 }
 
 export default function Analytics() {
-  const { data, isLoading } = useListPosts();
+  const { data: dashboardSummary, isLoading: isLoadingDashboard } =
+    useGetDashboardSummary();
+
+  const { data, isLoading: isLoadingPosts } = useListPosts();
+
+  const isLoading = isLoadingDashboard || isLoadingPosts;
 
   const posts = Array.isArray(data) ? data : [];
 
+  const statusCounts = dashboardSummary?.statusCounts;
+
+  const totalPostsFromDashboard =
+    (statusCounts?.scheduled || 0) +
+    (statusCounts?.draft || 0) +
+    (statusCounts?.published || 0) +
+    (statusCounts?.failed || 0);
+
   const analytics = useMemo(() => {
-    const totalPosts = posts.length;
+    const totalPosts = totalPostsFromDashboard || posts.length;
 
     const totalEngagement = posts.reduce(
       (sum: number, post: any) => sum + getPostEngagement(post),
@@ -200,15 +213,13 @@ export default function Analytics() {
       platformBreakdown,
       bestPostingHours,
     };
-  }, [posts]);
+  }, [posts, totalPostsFromDashboard]);
 
   return (
     <Layout>
       <div className="space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Analytics Atualizado
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
           <p className="mt-1 text-muted-foreground">
             Acompanhe o desempenho e engajamento das suas redes.
           </p>
@@ -280,9 +291,7 @@ export default function Analytics() {
 
           <Card className="border-emerald-100 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-semibold">
-                Taxa Média
-              </CardTitle>
+              <CardTitle className="text-sm font-semibold">Taxa Média</CardTitle>
               <div className="rounded-full bg-emerald-100 p-2">
                 <TrendingUp className="h-4 w-4 text-emerald-700" />
               </div>
