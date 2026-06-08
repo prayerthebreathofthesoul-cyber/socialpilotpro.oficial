@@ -1,25 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
+import { requireMaster, supabaseAdmin } from "../_utils/masterAuth";
 
-const supabaseUrl =
-  process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
 
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl) {
-  throw new Error("VITE_SUPABASE_URL não configurada na Vercel.");
+function normalizeEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
 }
-
-if (!serviceRoleKey) {
-  throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada na Vercel.");
-}
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -30,6 +16,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    /**
+     * 1. Segurança master
+     * Só a conta oficial logada pode executar esta API.
+     */
+    const auth = await requireMaster(req);
+
+    if (!auth.allowed) {
+      return res.status(auth.status).json({
+        success: false,
+        error: auth.error,
+      });
+    }
+
     const { companyId, userId, email, isOfficial } = req.body;
 
     if (!companyId) {
@@ -39,15 +38,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const officialEmail = "socialpilotpro.oficial@gmail.com";
-
-    if (isOfficial || email === officialEmail) {
+    /**
+     * 2. Proteção extra contra exclusão da conta oficial
+     */
+    if (
+      isOfficial === true ||
+      normalizeEmail(email) === normalizeEmail(OFFICIAL_EMAIL)
+    ) {
       return res.status(403).json({
         success: false,
         error: "A conta oficial não pode ser excluída.",
       });
     }
 
+    /**
+     * 3. Busca empresa no Supabase
+     */
     const { data: company, error: companyError } = await supabaseAdmin
       .from("companies")
       .select("*")
@@ -62,19 +68,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (company.email === officialEmail || company.is_official === true) {
+    /**
+     * 4. Proteção baseada nos dados reais da empresa
+     */
+    if (
+      company.is_official === true ||
+      company.isMaster === true ||
+      normalizeEmail(company.email) === normalizeEmail(OFFICIAL_EMAIL)
+    ) {
       return res.status(403).json({
         success: false,
         error: "A conta oficial não pode ser excluída.",
       });
     }
 
-    const authUserId = userId || company.user_id;
+    const authUserId =
+      userId ||
+      company.user_id ||
+      company.userId ||
+      company.auth_user_id ||
+      company.authUserId ||
+      null;
 
     /**
-     * Apaga dados relacionados à empresa.
-     * Se alguma dessas tabelas não existir no seu Supabase,
-     * a rota vai ignorar o erro e continuar.
+     * 5. Apagar dados relacionados à empresa.
+     * 
+     * Se uma tabela não existir, a API ignora o erro e continua.
+     * Isso evita erro tipo: relation "posts" does not exist.
      */
     const relatedTables = [
       "posts",
@@ -87,11 +107,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ];
 
     for (const table of relatedTables) {
-      await supabaseAdmin.from(table).delete().eq("company_id", companyId);
+      const { error } = await supabaseAdmin
+        .from(table)
+        .delete()
+        .eq("company_id", companyId);
+
+      if (error) {
+        console.warn(`Aviso ao limpar tabela ${table}:`, error.message);
+      }
     }
 
     /**
-     * Apaga a empresa da tabela companies.
+     * 6. Apagar empresa
      */
     const { error: deleteCompanyError } = await supabaseAdmin
       .from("companies")
@@ -107,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     /**
-     * Apaga o usuário do Supabase Auth.
+     * 7. Apagar usuário do Supabase Auth
      */
     if (authUserId) {
       const { error: deleteUserError } =
@@ -126,7 +153,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       message: "Empresa e usuário excluídos com sucesso.",
       deletedCompanyId: companyId,
-      deletedUserId: authUserId || null,
+      deletedUserId: authUserId,
     });
   } catch (error: any) {
     return res.status(500).json({
