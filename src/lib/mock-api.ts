@@ -216,12 +216,232 @@ function writeJson<T>(key: string, value: T): T {
   return value;
 }
 
+function isValidStatus(status: unknown): status is PostStatus {
+  return (
+    status === "draft" ||
+    status === "scheduled" ||
+    status === "published" ||
+    status === "failed"
+  );
+}
+
+function normalizeStatus(status: unknown): PostStatus {
+  if (isValidStatus(status)) return status;
+
+  if (status === "rascunho") return "draft";
+  if (status === "agendado") return "scheduled";
+  if (status === "publicado") return "published";
+  if (status === "erro") return "failed";
+
+  return "draft";
+}
+
+function normalizePlatforms(value: unknown): Platform[] {
+  const validPlatforms: Platform[] = ["instagram", "facebook", "tiktok"];
+
+  if (Array.isArray(value)) {
+    const platforms = value
+      .map((item) => String(item).toLowerCase())
+      .filter((item): item is Platform =>
+        validPlatforms.includes(item as Platform)
+      );
+
+    return platforms.length > 0 ? platforms : ["instagram"];
+  }
+
+  if (typeof value === "string") {
+    const platform = value.toLowerCase();
+
+    if (validPlatforms.includes(platform as Platform)) {
+      return [platform as Platform];
+    }
+  }
+
+  return ["instagram"];
+}
+
+function isPostLike(value: unknown): value is Record<string, any> {
+  if (!value || typeof value !== "object") return false;
+
+  const item = value as Record<string, any>;
+
+  const hasText =
+    typeof item.title === "string" ||
+    typeof item.caption === "string" ||
+    typeof item.content === "string" ||
+    typeof item.description === "string";
+
+  const hasPostSignal =
+    item.status !== undefined ||
+    item.platforms !== undefined ||
+    item.platform !== undefined ||
+    item.scheduledAt !== undefined ||
+    item.scheduled_at !== undefined ||
+    item.publishedAt !== undefined ||
+    item.published_at !== undefined ||
+    item.createdAt !== undefined ||
+    item.created_at !== undefined;
+
+  return hasText && hasPostSignal;
+}
+
+function extractPostsFromValue(value: unknown): Record<string, any>[] {
+  if (Array.isArray(value)) {
+    return value.filter(isPostLike);
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const item = value as Record<string, any>;
+
+  if (Array.isArray(item.posts)) {
+    return item.posts.filter(isPostLike);
+  }
+
+  if (Array.isArray(item.data)) {
+    return item.data.filter(isPostLike);
+  }
+
+  if (Array.isArray(item.items)) {
+    return item.items.filter(isPostLike);
+  }
+
+  return [];
+}
+
+function normalizePost(item: Record<string, any>, fallbackId: number): Post {
+  const status = normalizeStatus(item.status);
+  const platforms = normalizePlatforms(item.platforms || item.platform);
+
+  const scheduledAt = item.scheduledAt || item.scheduled_at || null;
+  const publishedAt = item.publishedAt || item.published_at || null;
+
+  const createdAt =
+    item.createdAt ||
+    item.created_at ||
+    item.date ||
+    item.updatedAt ||
+    item.updated_at ||
+    new Date().toISOString();
+
+  const numericId = Number(item.id);
+
+  return {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : fallbackId,
+    title:
+      item.title ||
+      item.caption ||
+      item.content ||
+      item.description ||
+      "Post sem título",
+    caption: item.caption || item.content || item.description || "",
+    hashtags: item.hashtags || "",
+    type: item.type === "story" ? "story" : "feed",
+    platforms,
+    status,
+    mediaUrl:
+      item.mediaUrl || item.media_url || item.imageUrl || item.image_url || item.url || null,
+    thumbnailUrl:
+      item.thumbnailUrl ||
+      item.thumbnail_url ||
+      item.mediaUrl ||
+      item.media_url ||
+      item.imageUrl ||
+      item.image_url ||
+      item.url ||
+      null,
+    scheduledAt,
+    publishedAt,
+    createdAt,
+    engagement: Number(
+      item.engagement ||
+        item.engagementCount ||
+        item.engagement_count ||
+        item.likes ||
+        0
+    ),
+    reach: Number(item.reach || item.reachCount || item.reach_count || 0),
+  };
+}
+
 function getPosts() {
-  return readJson<Post[]>(POSTS_KEY, defaultPosts);
+  const savedPosts = readJson<Post[]>(POSTS_KEY, defaultPosts);
+
+  if (typeof window === "undefined") {
+    return savedPosts;
+  }
+
+  const foundPosts: Post[] = [];
+  let fallbackId = Math.max(0, ...savedPosts.map((post) => Number(post.id) || 0)) + 1;
+
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+
+      if (!key) continue;
+
+      const raw = localStorage.getItem(key);
+
+      if (!raw) continue;
+
+      try {
+        const parsed = JSON.parse(raw);
+        const extractedPosts = extractPostsFromValue(parsed);
+
+        extractedPosts.forEach((item) => {
+          const normalized = normalizePost(item, fallbackId);
+          foundPosts.push(normalized);
+          fallbackId += 1;
+        });
+      } catch {
+        // Ignora chaves do localStorage que não são JSON.
+      }
+    }
+  } catch {
+    return savedPosts;
+  }
+
+  const allPosts = [...savedPosts, ...foundPosts];
+
+  const uniquePostsMap = new Map<string, Post>();
+
+  allPosts.forEach((post) => {
+    const uniqueKey = [
+      post.id,
+      post.title,
+      post.createdAt,
+      post.scheduledAt,
+      post.publishedAt,
+    ].join("|");
+
+    uniquePostsMap.set(uniqueKey, post);
+  });
+
+  const uniquePosts = Array.from(uniquePostsMap.values()).sort((a, b) => {
+    const dateA = new Date(
+      a.publishedAt || a.scheduledAt || a.createdAt || 0
+    ).getTime();
+
+    const dateB = new Date(
+      b.publishedAt || b.scheduledAt || b.createdAt || 0
+    ).getTime();
+
+    return dateB - dateA;
+  });
+
+  writeJson(POSTS_KEY, uniquePosts);
+
+  return uniquePosts;
 }
 
 function setPosts(posts: Post[]) {
-  return writeJson(POSTS_KEY, posts);
+  const normalizedPosts = posts.map((post, index) =>
+    normalizePost(post as unknown as Record<string, any>, index + 1)
+  );
+
+  return writeJson(POSTS_KEY, normalizedPosts);
 }
 
 function getMedia() {
@@ -286,16 +506,16 @@ export function useCreatePost() {
   return useMutation({
     mutationFn: async ({ data }: { data: Partial<Post> }) => {
       const posts = getPosts();
-      const status = (data.status as PostStatus) || "draft";
+      const status = normalizeStatus(data.status);
       const metrics = generatePostMetrics(status);
 
       const created: Post = {
-        id: Math.max(0, ...posts.map((post) => post.id)) + 1,
+        id: Math.max(0, ...posts.map((post) => Number(post.id) || 0)) + 1,
         title: data.title || "Nova postagem",
         caption: data.caption || "",
         hashtags: data.hashtags || "",
-        type: (data.type as PostType) || "feed",
-        platforms: (data.platforms as Platform[]) || ["instagram"],
+        type: data.type === "story" ? "story" : "feed",
+        platforms: normalizePlatforms(data.platforms),
         status,
         mediaUrl: data.mediaUrl || null,
         thumbnailUrl: data.thumbnailUrl || data.mediaUrl || null,
@@ -333,12 +553,20 @@ export function useUpdatePost() {
       const posts = getPosts().map((post) => {
         if (post.id !== id) return post;
 
+        const nextStatus =
+          data.status !== undefined ? normalizeStatus(data.status) : post.status;
+
         const becamePublished =
-          data.status === "published" && post.status !== "published";
+          nextStatus === "published" && post.status !== "published";
 
         updated = {
           ...post,
           ...data,
+          status: nextStatus,
+          platforms:
+            data.platforms !== undefined
+              ? normalizePlatforms(data.platforms)
+              : post.platforms,
           thumbnailUrl:
             data.mediaUrl !== undefined
               ? data.mediaUrl
@@ -525,7 +753,9 @@ export function useGetDashboardSummary(_options?: QueryOptions) {
             ? "Post publicado"
             : post.status === "scheduled"
               ? "Post agendado"
-              : "Rascunho criado",
+              : post.status === "failed"
+                ? "Falha na publicação"
+                : "Rascunho criado",
         postTitle: post.title,
         timestamp: post.publishedAt || post.scheduledAt || post.createdAt,
       }));
@@ -573,6 +803,8 @@ export function useGetAnalyticsOverview(_options?: QueryOptions) {
 
           const postDate = new Date(rawDate);
 
+          if (Number.isNaN(postDate.getTime())) return false;
+
           return postDate >= date && postDate < nextDate;
         });
 
@@ -616,7 +848,11 @@ export function useGetAnalyticsOverview(_options?: QueryOptions) {
 
         if (!rawDate) return;
 
-        const hour = new Date(rawDate).getHours();
+        const postDate = new Date(rawDate);
+
+        if (Number.isNaN(postDate.getTime())) return;
+
+        const hour = postDate.getHours();
         const current = hourMap.get(hour) || { posts: 0, engagement: 0 };
 
         hourMap.set(hour, {
