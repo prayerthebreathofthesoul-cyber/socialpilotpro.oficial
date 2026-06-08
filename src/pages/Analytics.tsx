@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -39,7 +40,15 @@ type BestPostingHourItem = {
 };
 
 export default function Analytics() {
-  const { data: analytics, isLoading } = useGetAnalyticsOverview();
+  const {
+    data: analytics,
+    isLoading,
+    refetch,
+  } = useGetAnalyticsOverview();
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
 
   const totalPosts = analytics?.totalPosts ?? 0;
   const totalEngagement = analytics?.totalEngagement ?? 0;
