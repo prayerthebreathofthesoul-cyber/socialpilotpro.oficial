@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
-import { PostCard } from "@/components/posts/PostCard";
 import {
   Card,
   CardContent,
@@ -20,8 +19,8 @@ import {
   CheckCircle2,
   FileEdit,
   AlertCircle,
+  Image as ImageIcon,
 } from "lucide-react";
-import { useListPosts, getListPostsQueryKey } from "@/lib/mock-api";
 import {
   addMonths,
   eachDayOfInterval,
@@ -36,8 +35,28 @@ import {
   subMonths,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 type CalendarFilter = "all" | "scheduled" | "published" | "draft" | "failed";
+type PostStatus = "draft" | "scheduled" | "published" | "failed";
+
+type SupabasePost = {
+  id: string;
+  company_id: string;
+  title: string;
+  caption: string | null;
+  hashtags: string | null;
+  media_url: string | null;
+  type: string;
+  status: PostStatus;
+  platforms: string[] | null;
+  scheduled_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  error_message?: string | null;
+};
 
 const filters: { value: CalendarFilter; label: string }[] = [
   { value: "all", label: "Todos" },
@@ -55,10 +74,60 @@ export default function Calendar() {
   const [date, setDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState<CalendarFilter>("all");
+  const [posts, setPosts] = useState<SupabasePost[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: posts = [], isLoading } = useListPosts(undefined, {
-    query: { queryKey: getListPostsQueryKey() },
-  });
+  const getCompanyId = async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error("Usuário não autenticado.");
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profileError || !profile?.company_id) {
+      throw new Error("Empresa do usuário não encontrada.");
+    }
+
+    return profile.company_id as string;
+  };
+
+  const loadCalendarData = async () => {
+    setIsLoading(true);
+
+    try {
+      const companyId = await getCompanyId();
+
+      const { data: postsData, error: postsError } = await supabase
+        .from("posts")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("updated_at", { ascending: false });
+
+      if (postsError) {
+        throw postsError;
+      }
+
+      setPosts((postsData || []) as SupabasePost[]);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Erro ao carregar posts do calendário.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCalendarData();
+  }, []);
 
   const capitalizeFirstLetter = (text: string) => {
     if (!text) return text;
@@ -69,50 +138,6 @@ export default function Calendar() {
     return capitalizeFirstLetter(
       format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })
     );
-  };
-
-  const getPostStatus = (post: any): CalendarFilter => {
-    const status = String(
-      post.status || post.post_status || post.publication_status || "draft"
-    ).toLowerCase();
-
-    if (
-      status === "scheduled" ||
-      status === "agendado" ||
-      status === "schedule"
-    ) {
-      return "scheduled";
-    }
-
-    if (
-      status === "published" ||
-      status === "publicado" ||
-      status === "posted" ||
-      status === "success" ||
-      status === "done" ||
-      status === "completed"
-    ) {
-      return "published";
-    }
-
-    if (
-      status === "draft" ||
-      status === "rascunho" ||
-      status === "rascunhos"
-    ) {
-      return "draft";
-    }
-
-    if (
-      status === "failed" ||
-      status === "falhou" ||
-      status === "error" ||
-      status === "erro"
-    ) {
-      return "failed";
-    }
-
-    return "draft";
   };
 
   const parsePostDate = (value: any) => {
@@ -134,73 +159,45 @@ export default function Calendar() {
     return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
   };
 
-  const getPostDateCandidates = (post: any) => {
-    return [
-      post.publishedAt,
-      post.published_at,
-      post.postedAt,
-      post.posted_at,
-      post.datePublished,
-      post.date_published,
+  const getPostStatus = (post: SupabasePost): CalendarFilter => {
+    const status = String(post.status || "draft").toLowerCase();
 
-      post.scheduledAt,
-      post.scheduled_at,
-      post.scheduleDate,
-      post.schedule_date,
-      post.scheduledFor,
-      post.scheduled_for,
+    if (status === "scheduled" || status === "agendado") return "scheduled";
+    if (status === "published" || status === "publicado") return "published";
+    if (status === "failed" || status === "falhou") return "failed";
 
-      post.updatedAt,
-      post.updated_at,
-      post.createdAt,
-      post.created_at,
-      post.date,
-    ]
-      .map(parsePostDate)
-      .filter(Boolean) as Date[];
+    return "draft";
   };
 
-  const postBelongsToDay = (post: any, day: Date) => {
-    return getPostDateCandidates(post).some((postDate) =>
-      isSameDay(postDate, day)
+  const getPostMainDate = (post: SupabasePost) => {
+    if (post.status === "published") {
+      return (
+        parsePostDate(post.published_at) ||
+        parsePostDate(post.updated_at) ||
+        parsePostDate(post.created_at) ||
+        new Date()
+      );
+    }
+
+    if (post.status === "scheduled") {
+      return (
+        parsePostDate(post.scheduled_at) ||
+        parsePostDate(post.updated_at) ||
+        parsePostDate(post.created_at) ||
+        new Date()
+      );
+    }
+
+    return (
+      parsePostDate(post.updated_at) ||
+      parsePostDate(post.created_at) ||
+      new Date()
     );
   };
 
-  const getPostDate = (post: any) => {
-    const status = getPostStatus(post);
-    const dates = getPostDateCandidates(post);
-
-    if (status === "published") {
-      return (
-        parsePostDate(post.publishedAt) ||
-        parsePostDate(post.published_at) ||
-        parsePostDate(post.postedAt) ||
-        parsePostDate(post.posted_at) ||
-        parsePostDate(post.datePublished) ||
-        parsePostDate(post.date_published) ||
-        parsePostDate(post.updatedAt) ||
-        parsePostDate(post.updated_at) ||
-        parsePostDate(post.createdAt) ||
-        parsePostDate(post.created_at) ||
-        new Date()
-      );
-    }
-
-    if (status === "scheduled") {
-      return (
-        parsePostDate(post.scheduledAt) ||
-        parsePostDate(post.scheduled_at) ||
-        parsePostDate(post.scheduleDate) ||
-        parsePostDate(post.schedule_date) ||
-        parsePostDate(post.scheduledFor) ||
-        parsePostDate(post.scheduled_for) ||
-        parsePostDate(post.createdAt) ||
-        parsePostDate(post.created_at) ||
-        new Date()
-      );
-    }
-
-    return dates[0] || new Date();
+  const postBelongsToDay = (post: SupabasePost, selectedDay: Date) => {
+    const postDate = getPostMainDate(post);
+    return isSameDay(postDate, selectedDay);
   };
 
   const monthDays = useMemo(() => {
@@ -216,23 +213,22 @@ export default function Calendar() {
   }, [currentMonth]);
 
   const selectedDayPosts = useMemo(() => {
-    return posts.filter((post: any) => postBelongsToDay(post, date));
+    return posts.filter((post) => postBelongsToDay(post, date));
   }, [posts, date]);
 
   const selectedDayCounts = useMemo(() => {
     return {
       all: selectedDayPosts.length,
       scheduled: selectedDayPosts.filter(
-        (post: any) => getPostStatus(post) === "scheduled"
+        (post) => getPostStatus(post) === "scheduled"
       ).length,
       published: selectedDayPosts.filter(
-        (post: any) => getPostStatus(post) === "published"
+        (post) => getPostStatus(post) === "published"
       ).length,
-      draft: selectedDayPosts.filter(
-        (post: any) => getPostStatus(post) === "draft"
-      ).length,
+      draft: selectedDayPosts.filter((post) => getPostStatus(post) === "draft")
+        .length,
       failed: selectedDayPosts.filter(
-        (post: any) => getPostStatus(post) === "failed"
+        (post) => getPostStatus(post) === "failed"
       ).length,
     };
   }, [selectedDayPosts]);
@@ -241,7 +237,7 @@ export default function Calendar() {
     if (activeTab === "all") return selectedDayPosts;
 
     return selectedDayPosts.filter(
-      (post: any) => getPostStatus(post) === activeTab
+      (post) => getPostStatus(post) === activeTab
     );
   }, [selectedDayPosts, activeTab]);
 
@@ -255,22 +251,19 @@ export default function Calendar() {
   };
 
   const getPostsForDay = (day: Date) => {
-    return posts.filter((post: any) => postBelongsToDay(post, day));
+    return posts.filter((post) => postBelongsToDay(post, day));
   };
 
   const getDayStatusCounts = (day: Date) => {
     const dayPosts = getPostsForDay(day);
 
     return {
-      scheduled: dayPosts.filter(
-        (post: any) => getPostStatus(post) === "scheduled"
-      ).length,
-      published: dayPosts.filter(
-        (post: any) => getPostStatus(post) === "published"
-      ).length,
-      draft: dayPosts.filter((post: any) => getPostStatus(post) === "draft")
+      scheduled: dayPosts.filter((post) => getPostStatus(post) === "scheduled")
         .length,
-      failed: dayPosts.filter((post: any) => getPostStatus(post) === "failed")
+      published: dayPosts.filter((post) => getPostStatus(post) === "published")
+        .length,
+      draft: dayPosts.filter((post) => getPostStatus(post) === "draft").length,
+      failed: dayPosts.filter((post) => getPostStatus(post) === "failed")
         .length,
       total: dayPosts.length,
     };
@@ -286,27 +279,69 @@ export default function Calendar() {
       return "border-border bg-muted/40 text-muted-foreground hover:border-primary hover:text-primary";
     }
 
-    if (filter === "all") {
-      return "border-blue-700 bg-blue-700 text-white shadow-sm";
+    if (filter === "all") return "border-blue-700 bg-blue-700 text-white";
+    if (filter === "scheduled")
+      return "border-orange-500 bg-orange-500 text-white";
+    if (filter === "published")
+      return "border-green-600 bg-green-600 text-white";
+    if (filter === "draft")
+      return "border-purple-600 bg-purple-600 text-white";
+    if (filter === "failed") return "border-red-600 bg-red-600 text-white";
+
+    return "border-primary bg-primary text-primary-foreground";
+  };
+
+  const getStatusLabel = (status: PostStatus) => {
+    if (status === "scheduled") return "Agendado";
+    if (status === "published") return "Publicado";
+    if (status === "failed") return "Falhou";
+    return "Rascunho";
+  };
+
+  const getStatusClasses = (status: PostStatus) => {
+    if (status === "scheduled") {
+      return "bg-blue-50 text-blue-700 border border-blue-200";
     }
 
-    if (filter === "scheduled") {
-      return "border-orange-500 bg-orange-500 text-white shadow-sm";
+    if (status === "published") {
+      return "bg-green-50 text-green-700 border border-green-200";
     }
 
-    if (filter === "published") {
-      return "border-green-600 bg-green-600 text-white shadow-sm";
+    if (status === "failed") {
+      return "bg-red-50 text-red-700 border border-red-200";
     }
 
-    if (filter === "draft") {
-      return "border-purple-600 bg-purple-600 text-white shadow-sm";
+    return "bg-muted text-muted-foreground border border-border";
+  };
+
+  const getPostDateLabel = (post: SupabasePost) => {
+    if (post.status === "scheduled" && post.scheduled_at) {
+      return `Agendado para ${format(
+        new Date(post.scheduled_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
     }
 
-    if (filter === "failed") {
-      return "border-red-600 bg-red-600 text-white shadow-sm";
+    if (post.status === "published" && post.published_at) {
+      return `Publicado em ${format(
+        new Date(post.published_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
     }
 
-    return "border-primary bg-primary text-primary-foreground shadow-sm";
+    if (post.status === "failed") {
+      return `Falhou em ${format(
+        new Date(post.updated_at || post.created_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
+    }
+
+    return `Criado em ${format(new Date(post.created_at), "dd/MM/yyyy", {
+      locale: ptBR,
+    })}`;
   };
 
   const goToNewPost = () => {
@@ -318,6 +353,10 @@ export default function Calendar() {
     const today = new Date();
     setDate(today);
     setCurrentMonth(today);
+  };
+
+  const openPostEditor = (postId: string) => {
+    setLocation(`/posts/${postId}/edit`);
   };
 
   const getEmptyDescription = () => {
@@ -338,6 +377,92 @@ export default function Calendar() {
     }
 
     return "Não há posts agendados, publicados, rascunhos ou com falhas nesta data.";
+  };
+
+  const renderPostCard = (post: SupabasePost) => {
+    return (
+      <Card
+        key={post.id}
+        className="h-full cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+        onClick={() => openPostEditor(post.id)}
+      >
+        {post.media_url ? (
+          <div className="aspect-video overflow-hidden bg-muted">
+            <img
+              src={post.media_url}
+              alt={post.title || "Imagem do post"}
+              className="h-full w-full object-cover"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
+            />
+          </div>
+        ) : (
+          <div className="flex aspect-video items-center justify-center bg-muted text-muted-foreground">
+            <ImageIcon className="h-8 w-8" />
+          </div>
+        )}
+
+        <CardContent className="space-y-3 p-4">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="line-clamp-1 font-semibold">
+              {post.title || "Post sem título"}
+            </h3>
+
+            <span
+              className={`shrink-0 rounded-full px-2 py-1 text-xs ${getStatusClasses(
+                post.status
+              )}`}
+            >
+              {getStatusLabel(post.status)}
+            </span>
+          </div>
+
+          <p className="line-clamp-2 min-h-[40px] text-sm text-muted-foreground">
+            {post.caption || "Sem legenda"}
+          </p>
+
+          {post.hashtags ? (
+            <p className="line-clamp-1 text-xs text-blue-600">
+              {post.hashtags}
+            </p>
+          ) : null}
+
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <div>{getPostDateLabel(post)}</div>
+
+            {post.platforms && post.platforms.length > 0 ? (
+              <div>Redes: {post.platforms.join(", ")}</div>
+            ) : null}
+
+            {post.status === "failed" ? (
+              <div className="line-clamp-2 text-red-600">
+                {post.error_message
+                  ? `Erro: ${post.error_message}`
+                  : "Erro: falha na publicação."}
+              </div>
+            ) : null}
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={(event) => {
+              event.stopPropagation();
+              openPostEditor(post.id);
+            }}
+          >
+            {post.status === "published"
+              ? "Ver detalhes"
+              : post.status === "failed"
+                ? "Ver erro"
+                : "Editar Post"}
+          </Button>
+        </CardContent>
+      </Card>
+    );
   };
 
   return (
@@ -621,9 +746,7 @@ export default function Calendar() {
                 </div>
               ) : filteredPosts.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {filteredPosts.map((post: any) => (
-                    <PostCard key={post.id} post={post} />
-                  ))}
+                  {filteredPosts.map((post) => renderPostCard(post))}
                 </div>
               ) : (
                 <div className="flex min-h-[420px] flex-col items-center justify-center text-center">
