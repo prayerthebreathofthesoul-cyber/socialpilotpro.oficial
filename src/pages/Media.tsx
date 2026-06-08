@@ -60,6 +60,8 @@ export default function Media() {
 
   const { data: media = [], isLoading } = useListMedia();
 
+  const deleteMedia = useDeleteMedia();
+
   const filteredMedia = media.filter((item: any) => {
     const term = search.toLowerCase().trim();
 
@@ -69,20 +71,6 @@ export default function Media() {
     const type = String(item.type || "").toLowerCase();
 
     return name.includes(term) || type.includes(term);
-  });
-
-  const deleteMedia = useDeleteMedia({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({
-          queryKey: getListMediaQueryKey(),
-        });
-        toast.success("Mídia excluída com sucesso!");
-      },
-      onError: () => {
-        toast.error("Erro ao excluir mídia.");
-      },
-    },
   });
 
   async function handleSearchPexels() {
@@ -119,10 +107,28 @@ export default function Media() {
     }
   }
 
+  function handleDeleteMedia(id: string) {
+    deleteMedia.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: getListMediaQueryKey(),
+          });
+
+          toast.success("Mídia excluída com sucesso!");
+        },
+        onError: () => {
+          toast.error("Erro ao excluir mídia.");
+        },
+      }
+    );
+  }
+
   function handleUseInNewPost(photo: PexelsPhoto) {
     const params = new URLSearchParams({
       imageUrl: photo.imageUrl,
-      imageAlt: photo.alt,
+      imageAlt: photo.alt || "Imagem do Pexels",
       photographer: photo.photographer,
       source: "pexels",
     });
@@ -138,6 +144,7 @@ export default function Media() {
             <h1 className="text-2xl font-bold tracking-tight">
               Biblioteca de Mídia
             </h1>
+
             <p className="text-muted-foreground">
               Gerencie imagens, vídeos e busque mídias grátis para suas postagens.
             </p>
@@ -166,6 +173,7 @@ export default function Media() {
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
                 <Input
                   placeholder="Buscar na biblioteca..."
                   value={search}
@@ -181,6 +189,7 @@ export default function Media() {
                     Filtrar
                   </Button>
                 </DropdownMenuTrigger>
+
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem>Todas as mídias</DropdownMenuItem>
                   <DropdownMenuItem>Imagens</DropdownMenuItem>
@@ -199,9 +208,11 @@ export default function Media() {
               <Card>
                 <CardContent className="flex min-h-64 flex-col items-center justify-center text-center">
                   <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground" />
+
                   <h3 className="text-lg font-semibold">
                     Nenhuma mídia encontrada
                   </h3>
+
                   <p className="mt-1 text-sm text-muted-foreground">
                     Envie uma mídia ou busque imagens grátis no banco de imagens.
                   </p>
@@ -252,7 +263,7 @@ export default function Media() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => deleteMedia.mutate({ id: item.id })}
+                          onClick={() => handleDeleteMedia(item.id)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -271,6 +282,7 @@ export default function Media() {
                   <h2 className="text-lg font-semibold">
                     Banco de imagens grátis
                   </h2>
+
                   <p className="text-sm text-muted-foreground">
                     Busque imagens gratuitas para usar nas suas postagens.
                   </p>
@@ -279,6 +291,7 @@ export default function Media() {
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
                     <Input
                       placeholder="Ex: ferramentas, oficina, construção, logística..."
                       value={pexelsSearch}
@@ -317,9 +330,11 @@ export default function Media() {
               <Card>
                 <CardContent className="flex min-h-64 flex-col items-center justify-center text-center">
                   <Sparkles className="mb-4 h-12 w-12 text-muted-foreground" />
+
                   <h3 className="text-lg font-semibold">
                     Busque uma imagem grátis
                   </h3>
+
                   <p className="mt-1 max-w-md text-sm text-muted-foreground">
                     Digite uma palavra-chave acima para encontrar imagens que podem
                     ser usadas em novos posts.
@@ -333,7 +348,7 @@ export default function Media() {
                     <div className="aspect-video bg-muted">
                       <img
                         src={photo.previewUrl}
-                        alt={photo.alt}
+                        alt={photo.alt || "Imagem do Pexels"}
                         className="h-full w-full object-cover"
                         loading="lazy"
                       />
