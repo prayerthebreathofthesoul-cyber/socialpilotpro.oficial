@@ -27,6 +27,9 @@ import { useListStores, useUpdateStore } from "@/lib/mock-api";
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
 
+type StorePlan = "free" | "premium";
+type StorePlanStatus = "active" | "blocked";
+
 type Store = {
   id: number;
   name?: string;
@@ -34,8 +37,8 @@ type Store = {
   ownerName?: string;
   segment?: string;
   cnpj?: string;
-  plan?: string;
-  planStatus?: string;
+  plan?: StorePlan;
+  planStatus?: StorePlanStatus;
   postsUsed?: number;
   postsLimit?: number | null;
   instagramConnected?: boolean;
@@ -124,7 +127,7 @@ export default function Master() {
     updateStore.mutate(
       {
         id: storeId,
-        data,
+        data: data as any,
       },
       {
         onError: () => {
