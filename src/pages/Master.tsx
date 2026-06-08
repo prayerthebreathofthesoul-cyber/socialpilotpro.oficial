@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout/Layout";
 import {
   Card,
@@ -22,14 +22,31 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useListStores, useUpdateStore, useListPosts } from "@/lib/mock-api";
+import { useListStores, useUpdateStore } from "@/lib/mock-api";
 
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
 
+type Store = {
+  id: number;
+  name?: string;
+  email?: string;
+  ownerName?: string;
+  segment?: string;
+  cnpj?: string;
+  plan?: string;
+  planStatus?: string;
+  postsUsed?: number;
+  postsLimit?: number | null;
+  instagramConnected?: boolean;
+  facebookConnected?: boolean;
+  tiktokConnected?: boolean;
+};
+
 export default function Master() {
   const [password, setPassword] = useState("");
   const [search, setSearch] = useState("");
+  const [localStores, setLocalStores] = useState<Store[]>([]);
 
   const hasMasterAccess =
     typeof window !== "undefined" &&
@@ -38,28 +55,39 @@ export default function Master() {
   const [allowed, setAllowed] = useState(hasMasterAccess);
 
   const { data: stores = [], isLoading } = useListStores();
-  const { data: posts = [] } = useListPosts();
   const updateStore = useUpdateStore();
+
+  useEffect(() => {
+    setLocalStores(stores as Store[]);
+  }, [stores]);
 
   const filteredStores = useMemo(() => {
     const term = search.trim().toLowerCase();
 
-    if (!term) return stores;
+    if (!term) return localStores;
 
-    return stores.filter((store) => {
+    return localStores.filter((store) => {
       return (
         store.name?.toLowerCase().includes(term) ||
         store.email?.toLowerCase().includes(term) ||
+        store.ownerName?.toLowerCase().includes(term) ||
         store.segment?.toLowerCase().includes(term) ||
         store.plan?.toLowerCase().includes(term)
       );
     });
-  }, [stores, search]);
+  }, [localStores, search]);
 
-  const totalStores = stores.length;
-  const premiumStores = stores.filter((store) => store.plan === "premium").length;
-  const freeStores = stores.filter((store) => store.plan !== "premium").length;
-  const blockedStores = stores.filter(
+  const totalStores = localStores.length;
+
+  const premiumStores = localStores.filter(
+    (store) => store.plan === "premium"
+  ).length;
+
+  const freeStores = localStores.filter(
+    (store) => store.plan !== "premium"
+  ).length;
+
+  const blockedStores = localStores.filter(
     (store) => store.planStatus === "blocked"
   ).length;
 
@@ -81,83 +109,73 @@ export default function Master() {
     toast.success("Você saiu do painel master.");
   }
 
-  function activatePremium(storeId: number) {
+  function updateStoreLocal(storeId: number, data: Partial<Store>) {
+    setLocalStores((currentStores) =>
+      currentStores.map((store) =>
+        store.id === storeId
+          ? {
+              ...store,
+              ...data,
+            }
+          : store
+      )
+    );
+
     updateStore.mutate(
       {
         id: storeId,
-        data: {
-          plan: "premium",
-          planStatus: "active",
-          postsLimit: null,
-        },
+        data,
       },
       {
-        onSuccess: () => toast.success("Plano Premium ativado."),
-        onError: () => toast.error("Erro ao ativar Premium."),
+        onError: () => {
+          toast.error("Erro ao salvar alteração.");
+        },
       }
     );
+  }
+
+  function activatePremium(storeId: number) {
+    updateStoreLocal(storeId, {
+      plan: "premium",
+      planStatus: "active",
+      postsLimit: null,
+    });
+
+    toast.success("Plano Premium ativado.");
   }
 
   function activateFree(storeId: number) {
-    updateStore.mutate(
-      {
-        id: storeId,
-        data: {
-          plan: "free",
-          planStatus: "active",
-          postsLimit: 15,
-        },
-      },
-      {
-        onSuccess: () => toast.success("Conta voltou para o plano gratuito."),
-        onError: () => toast.error("Erro ao alterar plano."),
-      }
-    );
+    updateStoreLocal(storeId, {
+      plan: "free",
+      planStatus: "active",
+      postsLimit: 15,
+    });
+
+    toast.success("Conta voltou para o plano gratuito.");
   }
 
   function blockStore(storeId: number) {
-    updateStore.mutate(
-      {
-        id: storeId,
-        data: {
-          planStatus: "blocked",
-        },
-      },
-      {
-        onSuccess: () => toast.success("Conta bloqueada."),
-        onError: () => toast.error("Erro ao bloquear conta."),
-      }
-    );
+    updateStoreLocal(storeId, {
+      planStatus: "blocked",
+    });
+
+    toast.success("Conta bloqueada.");
   }
 
   function unblockStore(storeId: number) {
-    updateStore.mutate(
-      {
-        id: storeId,
-        data: {
-          planStatus: "active",
-        },
-      },
-      {
-        onSuccess: () => toast.success("Conta reativada."),
-        onError: () => toast.error("Erro ao reativar conta."),
-      }
-    );
+    updateStoreLocal(storeId, {
+      planStatus: "active",
+    });
+
+    toast.success("Conta reativada.");
   }
 
   function resetUsage(storeId: number) {
-    updateStore.mutate(
-      {
-        id: storeId,
-        data: {
-          postsUsed: 0,
-        },
-      },
-      {
-        onSuccess: () => toast.success("Uso mensal zerado."),
-        onError: () => toast.error("Erro ao zerar uso."),
-      }
-    );
+    updateStoreLocal(storeId, {
+      postsUsed: 0,
+    });
+
+    toast.success("Uso mensal zerado.");
   }
 
   if (!allowed) {
@@ -212,6 +230,7 @@ export default function Master() {
             <h1 className="text-3xl font-bold text-slate-950">
               Painel Master
             </h1>
+
             <p className="text-slate-600">
               Controle empresas, planos, limites e bloqueios do SocialPilot Pro.
             </p>
@@ -229,6 +248,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Empresas</p>
                 <p className="text-3xl font-bold">{totalStores}</p>
               </div>
+
               <Building2 className="h-8 w-8 text-blue-950" />
             </CardContent>
           </Card>
@@ -239,6 +259,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Premium</p>
                 <p className="text-3xl font-bold">{premiumStores}</p>
               </div>
+
               <Crown className="h-8 w-8 text-orange-600" />
             </CardContent>
           </Card>
@@ -249,6 +270,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Gratuitas</p>
                 <p className="text-3xl font-bold">{freeStores}</p>
               </div>
+
               <Users className="h-8 w-8 text-emerald-600" />
             </CardContent>
           </Card>
@@ -259,6 +281,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Bloqueadas</p>
                 <p className="text-3xl font-bold">{blockedStores}</p>
               </div>
+
               <Lock className="h-8 w-8 text-red-600" />
             </CardContent>
           </Card>
@@ -269,6 +292,7 @@ export default function Master() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle>Empresas cadastradas</CardTitle>
+
                 <CardDescription>
                   Altere planos, bloqueie contas e acompanhe o uso mensal.
                 </CardDescription>
@@ -276,6 +300,7 @@ export default function Master() {
 
               <div className="relative w-full lg:w-80">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
                 <Input
                   className="pl-9"
                   placeholder="Buscar empresa, email ou plano..."
@@ -301,8 +326,7 @@ export default function Master() {
                   const isPremium = store.plan === "premium";
                   const isBlocked = store.planStatus === "blocked";
 
-                  const postsUsed =
-                    store.id === 1 ? posts.length : store.postsUsed ?? 0;
+                  const postsUsed = store.postsUsed ?? 0;
 
                   const postsLimit = isPremium
                     ? "Ilimitado"
@@ -317,7 +341,7 @@ export default function Master() {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-lg font-bold text-slate-950">
-                              {store.name}
+                              {store.name || "Empresa sem nome"}
                             </h3>
 
                             {isPremium ? (
