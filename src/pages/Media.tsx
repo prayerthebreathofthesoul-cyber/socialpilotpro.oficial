@@ -4,21 +4,18 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search,
   Upload,
   Image as ImageIcon,
   Video,
   FolderOpen,
-  MoreVertical,
+  Filter,
   Trash2,
-  Eye,
-  Copy,
-  Send,
-  X,
-  Images,
-  PlayCircle,
+  Sparkles,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 import {
   useListMedia,
@@ -38,580 +35,331 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+type PexelsPhoto = {
+  id: number;
+  alt: string;
+  photographer: string;
+  photographerUrl: string;
+  pexelsUrl: string;
+  imageUrl: string;
+  previewUrl: string;
+  originalUrl: string;
+};
+
 export default function Media() {
   const [, setLocation] = useLocation();
-
   const [search, setSearch] = useState("");
-  const [activeType, setActiveType] = useState<string>("all");
-  const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState("library");
+
+  const [pexelsSearch, setPexelsSearch] = useState("");
+  const [pexelsPhotos, setPexelsPhotos] = useState<PexelsPhoto[]>([]);
+  const [isSearchingPexels, setIsSearchingPexels] = useState(false);
 
   const queryClient = useQueryClient();
 
-  const { data: mediaFiles = [], isLoading } = useListMedia(undefined, {
-    query: { queryKey: getListMediaQueryKey() },
+  const { data: media = [], isLoading } = useListMedia({
+    search: search || undefined,
   });
 
-  const deleteMedia = useDeleteMedia();
+  const deleteMedia = useDeleteMedia({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListMediaQueryKey(),
+        });
+        toast.success("Mídia excluída com sucesso!");
+      },
+      onError: () => {
+        toast.error("Erro ao excluir mídia.");
+      },
+    },
+  });
 
-  const handleDelete = async (id: number, name?: string) => {
-    const confirmed = window.confirm(
-      `Tem certeza que deseja excluir ${
-        name ? `"${name}"` : "esta mídia"
-      }?\n\nEssa ação não poderá ser desfeita.`
-    );
+  async function handleSearchPexels() {
+    const term = pexelsSearch.trim();
 
-    if (!confirmed) return;
+    if (!term) {
+      toast.error("Digite o que você quer buscar.");
+      return;
+    }
 
     try {
-      await deleteMedia.mutateAsync({ id });
+      setIsSearchingPexels(true);
 
-      toast.success("Mídia excluída com sucesso.");
+      const response = await fetch(
+        `/api/pexels/search?query=${encodeURIComponent(term)}&per_page=12`
+      );
 
-      if (selectedMedia?.id === id) {
-        setSelectedMedia(null);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao buscar imagens.");
       }
 
-      queryClient.invalidateQueries({ queryKey: getListMediaQueryKey() });
-    } catch (e) {
-      toast.error("Erro ao excluir mídia.");
-    }
-  };
+      setPexelsPhotos(data.photos || []);
 
-  const copyUrl = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("URL copiada com sucesso.");
+      if (!data.photos || data.photos.length === 0) {
+        toast.info("Nenhuma imagem encontrada.");
+      }
     } catch (error) {
-      toast.error("Não foi possível copiar a URL.");
+      console.error(error);
+      toast.error("Não foi possível buscar imagens grátis.");
+    } finally {
+      setIsSearchingPexels(false);
     }
-  };
+  }
 
-  const useInNewPost = (file: any) => {
-    setLocation(`/posts/new?mediaId=${file.id}`);
-  };
+  function handleUseInNewPost(photo: PexelsPhoto) {
+    const params = new URLSearchParams({
+      imageUrl: photo.imageUrl,
+      imageAlt: photo.alt,
+      photographer: photo.photographer,
+      source: "pexels",
+    });
 
-  const filteredMedia = mediaFiles.filter((file: any) => {
-    const fileName = String(file.name || "").toLowerCase();
-    const fileTags = String(file.tags || "").toLowerCase();
-    const searchValue = search.toLowerCase().trim();
-
-    if (activeType !== "all" && file.type !== activeType) return false;
-
-    if (
-      searchValue &&
-      !fileName.includes(searchValue) &&
-      !fileTags.includes(searchValue)
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const imageCount = mediaFiles.filter((file: any) => file.type === "image")
-    .length;
-
-  const videoCount = mediaFiles.filter((file: any) => file.type === "video")
-    .length;
-
-  const formatBytes = (bytes: number) => {
-    if (!bytes || bytes === 0) return "0 Bytes";
-
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  };
-
-  const getFileDate = (file: any) => {
-    const date = file.createdAt || file.created_at || new Date();
-
-    return format(new Date(date), "dd MMM, yyyy", { locale: ptBR });
-  };
-
-  const getFilePreview = (file: any, mode: "card" | "modal" = "card") => {
-    const mediaUrl = file.url || file.media_url;
-    const thumbnailUrl = file.thumbnailUrl || file.thumbnail_url || mediaUrl;
-
-    if (file.type === "video") {
-      return (
-        <div className="relative h-full w-full bg-black">
-          {mode === "modal" ? (
-            <video
-              src={mediaUrl}
-              controls
-              className="h-full max-h-[70vh] w-full rounded-xl bg-black object-contain"
-            />
-          ) : (
-            <>
-              {thumbnailUrl ? (
-                <img
-                  src={thumbnailUrl}
-                  alt={file.name}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  onError={(event) => {
-                    event.currentTarget.style.display = "none";
-                  }}
-                />
-              ) : null}
-
-              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-sm">
-                  <PlayCircle className="h-9 w-9" />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <img
-        src={thumbnailUrl}
-        alt={file.name}
-        className={`h-full w-full ${
-          mode === "modal" ? "object-contain" : "object-cover"
-        } transition-transform duration-300 group-hover:scale-105`}
-        onError={(event) => {
-          event.currentTarget.style.display = "none";
-        }}
-      />
-    );
-  };
-
-  const renderMediaCard = (file: any) => {
-    const isVideo = file.type === "video";
-
-    return (
-      <Card
-        key={file.id}
-        className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg"
-      >
-        <div
-          className="relative aspect-[4/3] cursor-pointer overflow-hidden bg-muted"
-          onClick={() => setSelectedMedia(file)}
-        >
-          {getFilePreview(file)}
-
-          <div className="absolute left-3 top-3 flex gap-2">
-            <Badge className="border-0 bg-black/60 text-white hover:bg-black/60">
-              {isVideo ? (
-                <Video className="mr-1 h-3 w-3" />
-              ) : (
-                <ImageIcon className="mr-1 h-3 w-3" />
-              )}
-              {isVideo ? "VÍDEO" : "IMAGEM"}
-            </Badge>
-          </div>
-
-          <div className="absolute right-3 top-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 rounded-full border-0 bg-white/90 shadow-sm hover:bg-white"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelectedMedia(file);
-                  }}
-                >
-                  <Eye className="mr-2 h-4 w-4" />
-                  Visualizar
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    copyUrl(file.url || file.media_url);
-                  }}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copiar URL
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    useInNewPost(file);
-                  }}
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Usar em novo post
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleDelete(file.id, file.name);
-                  }}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Excluir
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100">
-            <Button
-              size="sm"
-              className="w-full font-semibold"
-              onClick={(event) => {
-                event.stopPropagation();
-                useInNewPost(file);
-              }}
-            >
-              <Send className="mr-2 h-4 w-4" />
-              Usar em novo post
-            </Button>
-          </div>
-        </div>
-
-        <CardContent className="space-y-3 p-4">
-          <div>
-            <h4 className="line-clamp-1 text-sm font-semibold" title={file.name}>
-              {file.name}
-            </h4>
-
-            <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>{formatBytes(file.size)}</span>
-              <span>{getFileDate(file)}</span>
-            </div>
-          </div>
-
-          {file.tags ? (
-            <div className="flex flex-wrap gap-1">
-              {String(file.tags)
-                .split(",")
-                .map((tag) => tag.trim())
-                .filter(Boolean)
-                .slice(0, 3)
-                .map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-muted px-2 py-1 text-[10px] text-muted-foreground"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground">Sem tags</div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => setSelectedMedia(file)}
-            >
-              <Eye className="mr-2 h-4 w-4" />
-              Ver
-            </Button>
-
-            <Button
-              type="button"
-              size="sm"
-              className="w-full"
-              onClick={() => useInNewPost(file)}
-            >
-              Usar
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
+    setLocation(`/posts/new?${params.toString()}`);
+  }
 
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
+            <h1 className="text-2xl font-bold tracking-tight">
               Biblioteca de Mídia
             </h1>
-
-            <p className="mt-1 text-muted-foreground">
-              Gerencie suas imagens e vídeos para criar postagens mais rápidas.
+            <p className="text-muted-foreground">
+              Gerencie imagens, vídeos e busque mídias grátis para suas postagens.
             </p>
           </div>
 
-          <Button
-            className="shrink-0"
-            onClick={() => toast.info("Simulação de upload de arquivo.")}
-          >
+          <Button>
             <Upload className="mr-2 h-4 w-4" />
-            Fazer Upload
+            Enviar mídia
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Card className="border-blue-200 bg-blue-50">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="rounded-full bg-blue-600 p-3 text-white">
-                <Images className="h-5 w-5" />
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="flex h-auto flex-wrap gap-2 bg-muted p-2">
+            <TabsTrigger value="library" className="gap-2">
+              <FolderOpen className="h-4 w-4" />
+              Minha biblioteca
+            </TabsTrigger>
+
+            <TabsTrigger value="pexels" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Banco de imagens grátis
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="library" className="mt-6 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar na biblioteca..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="pl-9"
+                />
               </div>
 
-              <div>
-                <p className="text-sm font-medium text-blue-700">
-                  Total de mídias
-                </p>
-                <p className="text-2xl font-bold text-blue-800">
-                  {mediaFiles.length}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="rounded-full bg-green-600 p-3 text-white">
-                <ImageIcon className="h-5 w-5" />
-              </div>
-
-              <div>
-                <p className="text-sm font-medium text-green-700">Imagens</p>
-                <p className="text-2xl font-bold text-green-800">
-                  {imageCount}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-purple-200 bg-purple-50">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="rounded-full bg-purple-600 p-3 text-white">
-                <Video className="h-5 w-5" />
-              </div>
-
-              <div>
-                <p className="text-sm font-medium text-purple-700">Vídeos</p>
-                <p className="text-2xl font-bold text-purple-800">
-                  {videoCount}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-            <div className="relative w-full lg:max-w-xl">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-              <Input
-                type="text"
-                placeholder="Buscar por nome ou tag..."
-                className="h-11 pl-10 pr-24"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-
-              {search ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-1 top-1/2 h-8 -translate-y-1/2"
-                  onClick={() => setSearch("")}
-                >
-                  Limpar
-                </Button>
-              ) : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Filtrar
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem>Todas as mídias</DropdownMenuItem>
+                  <DropdownMenuItem>Imagens</DropdownMenuItem>
+                  <DropdownMenuItem>Vídeos</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
-            <Tabs
-              value={activeType}
-              onValueChange={setActiveType}
-              className="w-full lg:w-auto"
-            >
-              <TabsList className="grid h-11 w-full grid-cols-3 lg:w-auto">
-                <TabsTrigger value="all">Todos</TabsTrigger>
-                <TabsTrigger value="image">Imagens</TabsTrigger>
-                <TabsTrigger value="video">Vídeos</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-              <Skeleton key={i} className="h-[330px] rounded-2xl" />
-            ))}
-          </div>
-        ) : filteredMedia.length > 0 ? (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredMedia.map((file: any) => renderMediaCard(file))}
-          </div>
-        ) : (
-          <div className="flex min-h-[420px] flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-muted/20 p-12 text-center">
-            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-muted">
-              <FolderOpen className="h-10 w-10 text-muted-foreground" />
-            </div>
-
-            <h3 className="mb-2 text-xl font-semibold">
-              {search || activeType !== "all"
-                ? "Nenhuma mídia encontrada"
-                : "Sua biblioteca está vazia"}
-            </h3>
-
-            <p className="mb-6 max-w-md text-sm text-muted-foreground">
-              {search || activeType !== "all"
-                ? "Tente limpar a busca ou alterar o filtro para visualizar mais arquivos."
-                : "Faça upload de imagens ou vídeos para reutilizar em suas postagens futuras."}
-            </p>
-
-            {search || activeType !== "all" ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearch("");
-                  setActiveType("all");
-                }}
-              >
-                Limpar filtros
-              </Button>
+            {isLoading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <Skeleton key={index} className="h-56 rounded-xl" />
+                ))}
+              </div>
+            ) : media.length === 0 ? (
+              <Card>
+                <CardContent className="flex min-h-64 flex-col items-center justify-center text-center">
+                  <ImageIcon className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold">
+                    Nenhuma mídia encontrada
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Envie uma mídia ou busque imagens grátis no banco de imagens.
+                  </p>
+                </CardContent>
+              </Card>
             ) : (
-              <Button onClick={() => toast.info("Simulação de upload.")}>
-                <Upload className="mr-2 h-4 w-4" />
-                Fazer Upload
-              </Button>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {media.map((item: any) => (
+                  <Card key={item.id} className="overflow-hidden">
+                    <div className="relative aspect-video bg-muted">
+                      {item.type === "video" ? (
+                        <div className="flex h-full items-center justify-center">
+                          <Video className="h-10 w-10 text-muted-foreground" />
+                        </div>
+                      ) : (
+                        <img
+                          src={item.url}
+                          alt={item.name || "Mídia"}
+                          className="h-full w-full object-cover"
+                        />
+                      )}
+                    </div>
+
+                    <CardContent className="space-y-3 p-4">
+                      <div className="space-y-1">
+                        <p className="line-clamp-1 font-medium">
+                          {item.name || "Mídia sem nome"}
+                        </p>
+
+                        {item.createdAt && (
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(item.createdAt), "dd 'de' MMMM yyyy", {
+                              locale: ptBR,
+                            })}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="secondary">
+                          {item.type === "video" ? "Vídeo" : "Imagem"}
+                        </Badge>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMedia.mutate({ id: item.id })}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             )}
-          </div>
-        )}
+          </TabsContent>
 
-        {selectedMedia ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-            <div className="relative max-h-[95vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-background shadow-2xl">
-              <div className="flex items-center justify-between border-b p-4">
-                <div className="min-w-0">
-                  <h2 className="line-clamp-1 text-lg font-bold">
-                    {selectedMedia.name}
+          <TabsContent value="pexels" className="mt-6 space-y-4">
+            <Card>
+              <CardContent className="space-y-4 p-4">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    Banco de imagens grátis
                   </h2>
-
                   <p className="text-sm text-muted-foreground">
-                    {selectedMedia.type === "video" ? "Vídeo" : "Imagem"} •{" "}
-                    {formatBytes(selectedMedia.size)} •{" "}
-                    {getFileDate(selectedMedia)}
+                    Busque imagens gratuitas para usar nas suas postagens.
                   </p>
                 </div>
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSelectedMedia(null)}
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-
-              <div className="grid max-h-[calc(95vh-80px)] grid-cols-1 overflow-auto lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="flex min-h-[360px] items-center justify-center bg-muted p-4">
-                  <div className="h-full max-h-[70vh] w-full">
-                    {getFilePreview(selectedMedia, "modal")}
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Ex: ferramentas, oficina, construção, logística..."
+                      value={pexelsSearch}
+                      onChange={(event) => setPexelsSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          handleSearchPexels();
+                        }
+                      }}
+                      className="pl-9"
+                    />
                   </div>
+
+                  <Button
+                    onClick={handleSearchPexels}
+                    disabled={isSearchingPexels}
+                    className="sm:min-w-44"
+                  >
+                    {isSearchingPexels ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Buscando...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="mr-2 h-4 w-4" />
+                        Buscar no Pexels
+                      </>
+                    )}
+                  </Button>
                 </div>
+              </CardContent>
+            </Card>
 
-                <div className="space-y-5 border-l p-5">
-                  <div>
-                    <p className="mb-1 text-sm font-semibold">Nome do arquivo</p>
-                    <p className="break-all text-sm text-muted-foreground">
-                      {selectedMedia.name}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="mb-1 text-sm font-semibold">Tipo</p>
-                    <Badge variant="secondary">
-                      {selectedMedia.type === "video" ? (
-                        <Video className="mr-1 h-3 w-3" />
-                      ) : (
-                        <ImageIcon className="mr-1 h-3 w-3" />
-                      )}
-                      {selectedMedia.type === "video" ? "Vídeo" : "Imagem"}
-                    </Badge>
-                  </div>
-
-                  <div>
-                    <p className="mb-1 text-sm font-semibold">URL</p>
-                    <p className="line-clamp-3 break-all text-xs text-muted-foreground">
-                      {selectedMedia.url || selectedMedia.media_url}
-                    </p>
-                  </div>
-
-                  {selectedMedia.tags ? (
-                    <div>
-                      <p className="mb-2 text-sm font-semibold">Tags</p>
-
-                      <div className="flex flex-wrap gap-2">
-                        {String(selectedMedia.tags)
-                          .split(",")
-                          .map((tag) => tag.trim())
-                          .filter(Boolean)
-                          .map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                      </div>
+            {pexelsPhotos.length === 0 ? (
+              <Card>
+                <CardContent className="flex min-h-64 flex-col items-center justify-center text-center">
+                  <Sparkles className="mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold">
+                    Busque uma imagem grátis
+                  </h3>
+                  <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                    Digite uma palavra-chave acima para encontrar imagens que podem
+                    ser usadas em novos posts.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {pexelsPhotos.map((photo) => (
+                  <Card key={photo.id} className="overflow-hidden">
+                    <div className="aspect-video bg-muted">
+                      <img
+                        src={photo.previewUrl}
+                        alt={photo.alt}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
                     </div>
-                  ) : null}
 
-                  <div className="space-y-2 pt-2">
-                    <Button
-                      className="w-full"
-                      onClick={() => useInNewPost(selectedMedia)}
-                    >
-                      <Send className="mr-2 h-4 w-4" />
-                      Usar em novo post
-                    </Button>
+                    <CardContent className="space-y-3 p-4">
+                      <div className="space-y-1">
+                        <p className="line-clamp-1 text-sm font-medium">
+                          {photo.alt}
+                        </p>
 
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() =>
-                        copyUrl(selectedMedia.url || selectedMedia.media_url)
-                      }
-                    >
-                      <Copy className="mr-2 h-4 w-4" />
-                      Copiar URL
-                    </Button>
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          Foto por {photo.photographer}
+                        </p>
+                      </div>
 
-                    <Button
-                      variant="destructive"
-                      className="w-full"
-                      onClick={() =>
-                        handleDelete(selectedMedia.id, selectedMedia.name)
-                      }
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Excluir mídia
-                    </Button>
-                  </div>
-                </div>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          onClick={() => handleUseInNewPost(photo)}
+                          className="w-full"
+                        >
+                          Usar em novo post
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => window.open(photo.pexelsUrl, "_blank")}
+                        >
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Ver no Pexels
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-            </div>
-          </div>
-        ) : null}
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </Layout>
   );
