@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type Platform = "instagram" | "facebook" | "tiktok";
 export type PostStatus = "draft" | "scheduled" | "published" | "failed";
@@ -240,6 +240,24 @@ function setStores(stores: StoreRecord[]) {
   return writeJson(STORES_KEY, stores);
 }
 
+function getPostDate(post: Post) {
+  return post.publishedAt || post.scheduledAt || post.createdAt;
+}
+
+function generatePostMetrics(status: PostStatus) {
+  if (status !== "published") {
+    return {
+      engagement: 0,
+      reach: 0,
+    };
+  }
+
+  return {
+    engagement: 24,
+    reach: 540,
+  };
+}
+
 export const getListPostsQueryKey = () => ["posts"];
 export const getGetPostQueryKey = (id?: number) => ["posts", id];
 export const getListMediaQueryKey = () => ["media"];
@@ -263,9 +281,13 @@ export function useGetPost(id: number, _options?: QueryOptions) {
 }
 
 export function useCreatePost() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ data }: { data: Partial<Post> }) => {
       const posts = getPosts();
+      const status = (data.status as PostStatus) || "draft";
+      const metrics = generatePostMetrics(status);
 
       const created: Post = {
         id: Math.max(0, ...posts.map((post) => post.id)) + 1,
@@ -274,25 +296,36 @@ export function useCreatePost() {
         hashtags: data.hashtags || "",
         type: (data.type as PostType) || "feed",
         platforms: (data.platforms as Platform[]) || ["instagram"],
-        status: (data.status as PostStatus) || "draft",
+        status,
         mediaUrl: data.mediaUrl || null,
-        thumbnailUrl: data.mediaUrl || null,
+        thumbnailUrl: data.thumbnailUrl || data.mediaUrl || null,
         scheduledAt: data.scheduledAt || null,
-        publishedAt:
-          data.status === "published" ? new Date().toISOString() : null,
+        publishedAt: status === "published" ? new Date().toISOString() : null,
         createdAt: new Date().toISOString(),
-        engagement: 0,
-        reach: 0,
+        engagement:
+          data.engagement !== undefined ? data.engagement : metrics.engagement,
+        reach: data.reach !== undefined ? data.reach : metrics.reach,
       };
 
       setPosts([created, ...posts]);
 
       return created;
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: getGetDashboardSummaryQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetAnalyticsOverviewQueryKey(),
+      });
+    },
   });
 }
 
 export function useUpdatePost() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Post> }) => {
       let updated: Post | null = null;
@@ -300,11 +333,35 @@ export function useUpdatePost() {
       const posts = getPosts().map((post) => {
         if (post.id !== id) return post;
 
+        const becamePublished =
+          data.status === "published" && post.status !== "published";
+
         updated = {
           ...post,
           ...data,
           thumbnailUrl:
-            data.mediaUrl !== undefined ? data.mediaUrl : post.thumbnailUrl,
+            data.mediaUrl !== undefined
+              ? data.mediaUrl
+              : data.thumbnailUrl !== undefined
+                ? data.thumbnailUrl
+                : post.thumbnailUrl,
+          publishedAt: becamePublished
+            ? new Date().toISOString()
+            : data.publishedAt !== undefined
+              ? data.publishedAt
+              : post.publishedAt,
+          scheduledAt:
+            data.scheduledAt !== undefined ? data.scheduledAt : post.scheduledAt,
+          engagement: becamePublished
+            ? post.engagement || 24
+            : data.engagement !== undefined
+              ? data.engagement
+              : post.engagement,
+          reach: becamePublished
+            ? post.reach || 540
+            : data.reach !== undefined
+              ? data.reach
+              : post.reach,
         } as Post;
 
         return updated;
@@ -314,10 +371,24 @@ export function useUpdatePost() {
 
       return updated;
     },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: getGetPostQueryKey(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetDashboardSummaryQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetAnalyticsOverviewQueryKey(),
+      });
+    },
   });
 }
 
 export function usePublishPost() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ id }: { id: number }) => {
       let updated: Post | null = null;
@@ -341,6 +412,18 @@ export function usePublishPost() {
 
       return updated;
     },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: getListPostsQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: getGetPostQueryKey(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetDashboardSummaryQueryKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: getGetAnalyticsOverviewQueryKey(),
+      });
+    },
   });
 }
 
@@ -352,10 +435,15 @@ export function useListMedia(_params?: unknown, _options?: QueryOptions) {
 }
 
 export function useDeleteMedia() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ id }: { id: number }) => {
       setMedia(getMedia().filter((file) => file.id !== id));
       return { ok: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListMediaQueryKey() });
     },
   });
 }
@@ -368,6 +456,8 @@ export function useListStores(_options?: QueryOptions) {
 }
 
 export function useUpdateStore() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({
       id,
@@ -389,6 +479,9 @@ export function useUpdateStore() {
       setStores(stores);
 
       return updated;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
     },
   });
 }
@@ -463,6 +556,83 @@ export function useGetAnalyticsOverview(_options?: QueryOptions) {
         0
       );
 
+      const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+      const weeklyEngagement = Array.from({ length: 7 }).map((_, index) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - index));
+        date.setHours(0, 0, 0, 0);
+
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+
+        const postsOfDay = posts.filter((post) => {
+          const rawDate = getPostDate(post);
+
+          if (!rawDate) return false;
+
+          const postDate = new Date(rawDate);
+
+          return postDate >= date && postDate < nextDate;
+        });
+
+        return {
+          day: days[date.getDay()],
+          engagement: postsOfDay.reduce(
+            (sum, post) => sum + (post.engagement || 0),
+            0
+          ),
+          reach: postsOfDay.reduce((sum, post) => sum + (post.reach || 0), 0),
+        };
+      });
+
+      const platformLabels: Record<Platform, string> = {
+        instagram: "Instagram",
+        facebook: "Facebook",
+        tiktok: "TikTok",
+      };
+
+      const platformBreakdown = (
+        ["instagram", "facebook", "tiktok"] as Platform[]
+      ).map((platform) => {
+        const platformPosts = posts.filter((post) =>
+          post.platforms.includes(platform)
+        );
+
+        return {
+          platform: platformLabels[platform],
+          posts: platformPosts.length,
+          engagement: platformPosts.reduce(
+            (sum, post) => sum + (post.engagement || 0),
+            0
+          ),
+        };
+      });
+
+      const hourMap = new Map<number, { posts: number; engagement: number }>();
+
+      posts.forEach((post) => {
+        const rawDate = getPostDate(post);
+
+        if (!rawDate) return;
+
+        const hour = new Date(rawDate).getHours();
+        const current = hourMap.get(hour) || { posts: 0, engagement: 0 };
+
+        hourMap.set(hour, {
+          posts: current.posts + 1,
+          engagement: current.engagement + (post.engagement || 0),
+        });
+      });
+
+      const bestPostingHours = Array.from(hourMap.entries())
+        .map(([hour, data]) => ({
+          hour,
+          engagementScore: data.engagement + data.posts * 10,
+        }))
+        .sort((a, b) => b.engagementScore - a.engagementScore)
+        .slice(0, 4);
+
       return {
         totalPosts: posts.length,
         totalEngagement,
@@ -470,43 +640,9 @@ export function useGetAnalyticsOverview(_options?: QueryOptions) {
         avgEngagementRate: totalReach
           ? (totalEngagement / totalReach) * 100
           : 0,
-        weeklyEngagement: [
-          { day: "Seg", engagement: 80, reach: 900 },
-          { day: "Ter", engagement: 120, reach: 1200 },
-          { day: "Qua", engagement: 95, reach: 1000 },
-          { day: "Qui", engagement: 180, reach: 1600 },
-          { day: "Sex", engagement: 210, reach: 2200 },
-          { day: "Sáb", engagement: 150, reach: 1800 },
-          { day: "Dom", engagement: 130, reach: 1400 },
-        ],
-        platformBreakdown: [
-          {
-            platform: "Instagram",
-            posts: posts.filter((post) =>
-              post.platforms.includes("instagram")
-            ).length,
-            engagement: 220,
-          },
-          {
-            platform: "Facebook",
-            posts: posts.filter((post) =>
-              post.platforms.includes("facebook")
-            ).length,
-            engagement: 160,
-          },
-          {
-            platform: "TikTok",
-            posts: posts.filter((post) => post.platforms.includes("tiktok"))
-              .length,
-            engagement: 300,
-          },
-        ],
-        bestPostingHours: [
-          { hour: 9, engagementScore: 82 },
-          { hour: 12, engagementScore: 74 },
-          { hour: 18, engagementScore: 91 },
-          { hour: 20, engagementScore: 88 },
-        ],
+        weeklyEngagement,
+        platformBreakdown,
+        bestPostingHours,
       };
     },
   });
