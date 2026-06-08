@@ -32,6 +32,18 @@ import {
 
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
+const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
+
+function normalizeEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isOfficialStore(store: StoreRecord) {
+  return (
+    store.isMaster === true ||
+    normalizeEmail(store.email) === normalizeEmail(OFFICIAL_EMAIL)
+  );
+}
 
 export default function Master() {
   const [password, setPassword] = useState("");
@@ -49,7 +61,23 @@ export default function Master() {
   const deleteStore = useDeleteStore();
 
   useEffect(() => {
-    setLocalStores(stores);
+    const normalizedStores = stores.map((store) => {
+      if (!isOfficialStore(store)) return store;
+
+      return {
+        ...store,
+        name: store.name || "SocialPilot Pro Oficial",
+        email: OFFICIAL_EMAIL,
+        ownerName: store.ownerName || "SocialPilot Pro",
+        segment: store.segment || "Gestão de redes sociais",
+        plan: "premium" as const,
+        planStatus: "active" as const,
+        postsLimit: null,
+        isMaster: true,
+      };
+    });
+
+    setLocalStores(normalizedStores);
   }, [stores]);
 
   const filteredStores = useMemo(() => {
@@ -128,8 +156,13 @@ export default function Master() {
     );
   }
 
-  function activatePremium(storeId: number) {
-    updateStoreLocal(storeId, {
+  function activatePremium(store: StoreRecord) {
+    if (isOfficialStore(store)) {
+      toast.info("A conta oficial já é Premium e não pode ser alterada.");
+      return;
+    }
+
+    updateStoreLocal(store.id, {
       plan: "premium",
       planStatus: "active",
       postsLimit: null,
@@ -138,8 +171,13 @@ export default function Master() {
     toast.success("Plano Premium ativado.");
   }
 
-  function activateFree(storeId: number) {
-    updateStoreLocal(storeId, {
+  function activateFree(store: StoreRecord) {
+    if (isOfficialStore(store)) {
+      toast.error("A conta oficial não pode voltar para o plano gratuito.");
+      return;
+    }
+
+    updateStoreLocal(store.id, {
       plan: "free",
       planStatus: "active",
       postsLimit: 15,
@@ -148,46 +186,56 @@ export default function Master() {
     toast.success("Conta voltou para o plano gratuito.");
   }
 
-  function blockStore(storeId: number) {
-    updateStoreLocal(storeId, {
+  function blockStore(store: StoreRecord) {
+    if (isOfficialStore(store)) {
+      toast.error("A conta oficial não pode ser bloqueada.");
+      return;
+    }
+
+    updateStoreLocal(store.id, {
       planStatus: "blocked",
     });
 
     toast.success("Conta bloqueada.");
   }
 
-  function unblockStore(storeId: number) {
-    updateStoreLocal(storeId, {
+  function unblockStore(store: StoreRecord) {
+    updateStoreLocal(store.id, {
       planStatus: "active",
     });
 
     toast.success("Conta reativada.");
   }
 
-  function resetUsage(storeId: number) {
-    updateStoreLocal(storeId, {
+  function resetUsage(store: StoreRecord) {
+    updateStoreLocal(store.id, {
       postsUsed: 0,
     });
 
     toast.success("Uso mensal zerado.");
   }
 
-  function removeStore(storeId: number, storeName?: string | null) {
+  function removeStore(store: StoreRecord) {
+    if (isOfficialStore(store)) {
+      toast.error("A conta oficial não pode ser excluída.");
+      return;
+    }
+
     const confirmed = window.confirm(
       `Tem certeza que deseja excluir a empresa "${
-        storeName || "sem nome"
+        store.name || "sem nome"
       }"?\n\nEssa ação removerá a empresa do Painel Master e liberará o CPF/CNPJ para novo cadastro.`
     );
 
     if (!confirmed) return;
 
     setLocalStores((currentStores) =>
-      currentStores.filter((store) => store.id !== storeId)
+      currentStores.filter((currentStore) => currentStore.id !== store.id)
     );
 
     deleteStore.mutate(
       {
-        id: storeId,
+        id: store.id,
       },
       {
         onSuccess: () => {
@@ -316,8 +364,8 @@ export default function Master() {
                 <CardTitle>Empresas cadastradas</CardTitle>
 
                 <CardDescription>
-                  Altere planos, bloqueie contas, exclua empresas e acompanhe o
-                  uso mensal.
+                  Altere planos, bloqueie contas, exclua empresas comuns e
+                  acompanhe o uso mensal.
                 </CardDescription>
               </div>
 
@@ -348,6 +396,7 @@ export default function Master() {
                 {filteredStores.map((store) => {
                   const isPremium = store.plan === "premium";
                   const isBlocked = store.planStatus === "blocked";
+                  const protectedOfficial = isOfficialStore(store);
 
                   const documentNumber =
                     store.documentNumber || store.cnpj || store.cpf || "";
@@ -385,6 +434,12 @@ export default function Master() {
                             ) : (
                               <Badge className="bg-emerald-600 hover:bg-emerald-600">
                                 Ativa
+                              </Badge>
+                            )}
+
+                            {protectedOfficial && (
+                              <Badge className="bg-blue-950 hover:bg-blue-950">
+                                Oficial
                               </Badge>
                             )}
                           </div>
@@ -466,62 +521,72 @@ export default function Master() {
                       </div>
 
                       <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                        {!isPremium ? (
-                          <Button
-                            className="bg-orange-600 hover:bg-orange-700"
-                            onClick={() => activatePremium(store.id)}
-                            disabled={updateStore.isPending}
-                          >
-                            <Crown className="mr-2 h-4 w-4" />
-                            Ativar Premium
+                        {protectedOfficial ? (
+                          <Button variant="outline" disabled>
+                            Conta oficial protegida
                           </Button>
                         ) : (
-                          <Button
-                            variant="outline"
-                            onClick={() => activateFree(store.id)}
-                            disabled={updateStore.isPending}
-                          >
-                            Voltar para Gratuito
-                          </Button>
-                        )}
+                          <>
+                            {!isPremium ? (
+                              <Button
+                                className="bg-orange-600 hover:bg-orange-700"
+                                onClick={() => activatePremium(store)}
+                                disabled={updateStore.isPending}
+                              >
+                                <Crown className="mr-2 h-4 w-4" />
+                                Ativar Premium
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                onClick={() => activateFree(store)}
+                                disabled={updateStore.isPending}
+                              >
+                                Voltar para Gratuito
+                              </Button>
+                            )}
 
-                        {!isBlocked ? (
-                          <Button
-                            variant="destructive"
-                            onClick={() => blockStore(store.id)}
-                            disabled={updateStore.isPending}
-                          >
-                            <Lock className="mr-2 h-4 w-4" />
-                            Bloquear
-                          </Button>
-                        ) : (
-                          <Button
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                            onClick={() => unblockStore(store.id)}
-                            disabled={updateStore.isPending}
-                          >
-                            <Unlock className="mr-2 h-4 w-4" />
-                            Reativar
-                          </Button>
+                            {!isBlocked ? (
+                              <Button
+                                variant="destructive"
+                                onClick={() => blockStore(store)}
+                                disabled={updateStore.isPending}
+                              >
+                                <Lock className="mr-2 h-4 w-4" />
+                                Bloquear
+                              </Button>
+                            ) : (
+                              <Button
+                                className="bg-emerald-600 hover:bg-emerald-700"
+                                onClick={() => unblockStore(store)}
+                                disabled={updateStore.isPending}
+                              >
+                                <Unlock className="mr-2 h-4 w-4" />
+                                Reativar
+                              </Button>
+                            )}
+                          </>
                         )}
 
                         <Button
                           variant="outline"
-                          onClick={() => resetUsage(store.id)}
+                          onClick={() => resetUsage(store)}
                           disabled={updateStore.isPending}
                         >
                           <RefreshCcw className="mr-2 h-4 w-4" />
                           Zerar uso mensal
                         </Button>
 
-                        <Button
-                          variant="destructive"
-                          onClick={() => removeStore(store.id, store.name)}
-                          disabled={deleteStore.isPending}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Excluir empresa
-                        </Button>
+                        {!protectedOfficial && (
+                          <Button
+                            variant="destructive"
+                            onClick={() => removeStore(store)}
+                            disabled={deleteStore.isPending}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Excluir empresa
+                          </Button>
+                        )}
                       </div>
                     </div>
                   );
