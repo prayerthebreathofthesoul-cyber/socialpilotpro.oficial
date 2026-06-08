@@ -68,11 +68,11 @@ const POSTS_KEY = "socialpilot_demo_posts";
 const MEDIA_KEY = "socialpilot_demo_media";
 const STORES_KEY = "socialpilot_demo_stores";
 
-/**
- * Essa chave serve para limpar automaticamente os 3 posts antigos de demonstração
- * apenas uma vez. Assim o usuário não precisa abrir o console do navegador.
- */
-const POSTS_RESET_KEY = "socialpilot_demo_posts_reset_v3";
+const DEMO_POST_TITLES = [
+  "Oferta relâmpago de ferramentas",
+  "Story de novidades",
+  "Post publicado de demonstração",
+];
 
 function nowMinus(days: number) {
   const d = new Date();
@@ -80,70 +80,13 @@ function nowMinus(days: number) {
   return d.toISOString();
 }
 
-function nowPlus(days: number, hour = 10) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  d.setHours(hour, 0, 0, 0);
-  return d.toISOString();
-}
-
-const defaultPosts: Post[] = [
-  {
-    id: 1,
-    title: "Oferta relâmpago de ferramentas",
-    caption:
-      "Promoção especial por tempo limitado. Confira as melhores ferramentas para facilitar seu trabalho.",
-    hashtags: "#ferramentas #promoção #oferta",
-    type: "feed",
-    platforms: ["instagram", "facebook"],
-    status: "scheduled",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=900&q=80",
-    scheduledAt: nowPlus(1, 9),
-    publishedAt: null,
-    createdAt: nowMinus(3),
-    engagement: 0,
-    reach: 0,
-  },
-  {
-    id: 2,
-    title: "Story de novidades",
-    caption: "Chegaram novidades para quem trabalha com manutenção e construção.",
-    hashtags: "#novidades #construção #manutenção",
-    type: "story",
-    platforms: ["instagram", "tiktok"],
-    status: "draft",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1581147036324-c1c89c2c8b5c?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1581147036324-c1c89c2c8b5c?auto=format&fit=crop&w=900&q=80",
-    scheduledAt: null,
-    publishedAt: null,
-    createdAt: nowMinus(1),
-    engagement: 0,
-    reach: 0,
-  },
-  {
-    id: 3,
-    title: "Post publicado de demonstração",
-    caption: "Exemplo de post publicado para mostrar os dados no painel.",
-    hashtags: "#socialpilot #demo",
-    type: "feed",
-    platforms: ["facebook"],
-    status: "published",
-    mediaUrl:
-      "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1487017159836-4e23ece2e4cf?auto=format&fit=crop&w=900&q=80",
-    scheduledAt: null,
-    publishedAt: nowMinus(2),
-    createdAt: nowMinus(4),
-    engagement: 126,
-    reach: 2400,
-  },
-];
+/**
+ * IMPORTANTE:
+ * Antes havia 3 posts fixos aqui.
+ * Isso fazia Posts, Dashboard e Analytics ficarem presos em 3 posts.
+ * Agora começa vazio.
+ */
+const defaultPosts: Post[] = [];
 
 const defaultMedia: MediaFile[] = [
   {
@@ -210,6 +153,7 @@ function readJson<T>(key: string, fallback: T): T {
 
     return JSON.parse(raw) as T;
   } catch {
+    localStorage.setItem(key, JSON.stringify(fallback));
     return fallback;
   }
 }
@@ -264,57 +208,6 @@ function normalizePlatforms(value: unknown): Platform[] {
   }
 
   return ["instagram"];
-}
-
-function isPostLike(value: unknown): value is Record<string, any> {
-  if (!value || typeof value !== "object") return false;
-
-  const item = value as Record<string, any>;
-
-  const hasText =
-    typeof item.title === "string" ||
-    typeof item.caption === "string" ||
-    typeof item.content === "string" ||
-    typeof item.description === "string";
-
-  const hasPostSignal =
-    item.status !== undefined ||
-    item.platforms !== undefined ||
-    item.platform !== undefined ||
-    item.scheduledAt !== undefined ||
-    item.scheduled_at !== undefined ||
-    item.publishedAt !== undefined ||
-    item.published_at !== undefined ||
-    item.createdAt !== undefined ||
-    item.created_at !== undefined;
-
-  return hasText && hasPostSignal;
-}
-
-function extractPostsFromValue(value: unknown): Record<string, any>[] {
-  if (Array.isArray(value)) {
-    return value.filter(isPostLike);
-  }
-
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-
-  const item = value as Record<string, any>;
-
-  if (Array.isArray(item.posts)) {
-    return item.posts.filter(isPostLike);
-  }
-
-  if (Array.isArray(item.data)) {
-    return item.data.filter(isPostLike);
-  }
-
-  if (Array.isArray(item.items)) {
-    return item.items.filter(isPostLike);
-  }
-
-  return [];
 }
 
 function normalizePost(item: Record<string, any>, fallbackId: number): Post {
@@ -377,126 +270,81 @@ function normalizePost(item: Record<string, any>, fallbackId: number): Post {
   };
 }
 
-function isOnlyOldDemoPosts(posts: unknown): boolean {
-  if (!Array.isArray(posts)) return false;
-
-  return (
-    posts.length === 3 &&
-    posts.some((post) => post?.title === "Oferta relâmpago de ferramentas") &&
-    posts.some((post) => post?.title === "Story de novidades") &&
-    posts.some((post) => post?.title === "Post publicado de demonstração")
-  );
-}
-
-/**
- * Limpa automaticamente os 3 posts antigos de demonstração apenas uma vez.
- * Isso evita o problema do Analytics ficar preso em "3 posts".
- */
-function resetOldDemoPostsOnce() {
-  if (typeof window === "undefined") return;
-
-  try {
-    const alreadyReset = localStorage.getItem(POSTS_RESET_KEY);
-
-    if (alreadyReset) return;
-
-    const raw = localStorage.getItem(POSTS_KEY);
-
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-
-        if (isOnlyOldDemoPosts(parsed)) {
-          localStorage.removeItem(POSTS_KEY);
-        }
-      } catch {
-        localStorage.removeItem(POSTS_KEY);
-      }
-    }
-
-    localStorage.setItem(POSTS_RESET_KEY, "true");
-  } catch {
-    // Se o navegador bloquear localStorage, não quebra o sistema.
-  }
+function isDemoPost(post: Post) {
+  return DEMO_POST_TITLES.includes(post.title);
 }
 
 function getPosts() {
   if (typeof window === "undefined") {
-    return defaultPosts;
+    return [];
   }
-
-  resetOldDemoPostsOnce();
-
-  const savedPosts = readJson<Post[]>(POSTS_KEY, defaultPosts);
-
-  const foundPosts: Post[] = [];
-  let fallbackId =
-    Math.max(0, ...savedPosts.map((post) => Number(post.id) || 0)) + 1;
 
   try {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
+    const raw = localStorage.getItem(POSTS_KEY);
 
-      if (!key) continue;
-
-      const raw = localStorage.getItem(key);
-
-      if (!raw) continue;
-
-      try {
-        const parsed = JSON.parse(raw);
-        const extractedPosts = extractPostsFromValue(parsed);
-
-        extractedPosts.forEach((item) => {
-          const normalized = normalizePost(item, fallbackId);
-          foundPosts.push(normalized);
-          fallbackId += 1;
-        });
-      } catch {
-        // Ignora chaves do localStorage que não são JSON.
-      }
+    if (!raw) {
+      localStorage.setItem(POSTS_KEY, JSON.stringify([]));
+      return [];
     }
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(POSTS_KEY, JSON.stringify([]));
+      return [];
+    }
+
+    const normalizedPosts = parsed.map((post, index) =>
+      normalizePost(post as unknown as Record<string, any>, index + 1)
+    );
+
+    /**
+     * Remove definitivamente os 3 posts antigos de demonstração.
+     * Assim eles não voltam mais para Posts, Dashboard e Analytics.
+     */
+    const realPosts = normalizedPosts.filter((post) => !isDemoPost(post));
+
+    const uniquePostsMap = new Map<string, Post>();
+
+    realPosts.forEach((post) => {
+      const uniqueKey = [
+        post.id,
+        post.title,
+        post.createdAt,
+        post.scheduledAt,
+        post.publishedAt,
+      ].join("|");
+
+      uniquePostsMap.set(uniqueKey, post);
+    });
+
+    const uniquePosts = Array.from(uniquePostsMap.values()).sort((a, b) => {
+      const dateA = new Date(
+        a.publishedAt || a.scheduledAt || a.createdAt || 0
+      ).getTime();
+
+      const dateB = new Date(
+        b.publishedAt || b.scheduledAt || b.createdAt || 0
+      ).getTime();
+
+      return dateB - dateA;
+    });
+
+    writeJson(POSTS_KEY, uniquePosts);
+
+    return uniquePosts;
   } catch {
-    return savedPosts;
+    localStorage.setItem(POSTS_KEY, JSON.stringify([]));
+    return [];
   }
-
-  const allPosts = [...savedPosts, ...foundPosts];
-
-  const uniquePostsMap = new Map<string, Post>();
-
-  allPosts.forEach((post) => {
-    const uniqueKey = [
-      post.id,
-      post.title,
-      post.createdAt,
-      post.scheduledAt,
-      post.publishedAt,
-    ].join("|");
-
-    uniquePostsMap.set(uniqueKey, post);
-  });
-
-  const uniquePosts = Array.from(uniquePostsMap.values()).sort((a, b) => {
-    const dateA = new Date(
-      a.publishedAt || a.scheduledAt || a.createdAt || 0
-    ).getTime();
-
-    const dateB = new Date(
-      b.publishedAt || b.scheduledAt || b.createdAt || 0
-    ).getTime();
-
-    return dateB - dateA;
-  });
-
-  writeJson(POSTS_KEY, uniquePosts);
-
-  return uniquePosts;
 }
 
 function setPosts(posts: Post[]) {
-  const normalizedPosts = posts.map((post, index) =>
-    normalizePost(post as unknown as Record<string, any>, index + 1)
-  );
+  const normalizedPosts = posts
+    .map((post, index) =>
+      normalizePost(post as unknown as Record<string, any>, index + 1)
+    )
+    .filter((post) => !isDemoPost(post));
 
   return writeJson(POSTS_KEY, normalizedPosts);
 }
