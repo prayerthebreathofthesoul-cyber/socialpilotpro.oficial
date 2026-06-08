@@ -71,29 +71,90 @@ export default function Calendar() {
     );
   };
 
+  const getPostStatus = (post: any): CalendarFilter => {
+    const status = String(
+      post.status || post.post_status || post.publication_status || "draft"
+    ).toLowerCase();
+
+    if (
+      status === "scheduled" ||
+      status === "agendado" ||
+      status === "schedule"
+    ) {
+      return "scheduled";
+    }
+
+    if (
+      status === "published" ||
+      status === "publicado" ||
+      status === "posted" ||
+      status === "success" ||
+      status === "done" ||
+      status === "completed"
+    ) {
+      return "published";
+    }
+
+    if (
+      status === "draft" ||
+      status === "rascunho" ||
+      status === "rascunhos"
+    ) {
+      return "draft";
+    }
+
+    if (
+      status === "failed" ||
+      status === "falhou" ||
+      status === "error" ||
+      status === "erro"
+    ) {
+      return "failed";
+    }
+
+    return "draft";
+  };
+
   const getPostDate = (post: any) => {
-    return new Date(
-      post.scheduledAt ||
-        post.scheduled_at ||
+    const status = getPostStatus(post);
+
+    if (status === "published") {
+      return new Date(
         post.publishedAt ||
-        post.published_at ||
-        post.updatedAt ||
+          post.published_at ||
+          post.postedAt ||
+          post.posted_at ||
+          post.datePublished ||
+          post.date_published ||
+          post.updatedAt ||
+          post.updated_at ||
+          post.createdAt ||
+          post.created_at ||
+          new Date()
+      );
+    }
+
+    if (status === "scheduled") {
+      return new Date(
+        post.scheduledAt ||
+          post.scheduled_at ||
+          post.scheduleDate ||
+          post.schedule_date ||
+          post.scheduledFor ||
+          post.scheduled_for ||
+          post.createdAt ||
+          post.created_at ||
+          new Date()
+      );
+    }
+
+    return new Date(
+      post.updatedAt ||
         post.updated_at ||
         post.createdAt ||
         post.created_at ||
         new Date()
     );
-  };
-
-  const getPostStatus = (post: any): CalendarFilter => {
-    const status = post.status || post.post_status || "draft";
-
-    if (status === "scheduled" || status === "agendado") return "scheduled";
-    if (status === "published" || status === "publicado") return "published";
-    if (status === "draft" || status === "rascunho") return "draft";
-    if (status === "failed" || status === "falhou") return "failed";
-
-    return "draft";
   };
 
   const monthDays = useMemo(() => {
