@@ -60,6 +60,17 @@ export default function Calendar() {
     query: { queryKey: getListPostsQueryKey() },
   });
 
+  const capitalizeFirstLetter = (text: string) => {
+    if (!text) return text;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  };
+
+  const formatSelectedDate = (selectedDate: Date) => {
+    return capitalizeFirstLetter(
+      format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })
+    );
+  };
+
   const getPostDate = (post: any) => {
     return new Date(
       post.scheduledAt ||
@@ -239,7 +250,9 @@ export default function Calendar() {
 
                   <div className="text-center">
                     <p className="text-lg font-semibold">
-                      {format(currentMonth, "MMMM yyyy", { locale: ptBR })}
+                      {capitalizeFirstLetter(
+                        format(currentMonth, "MMMM yyyy", { locale: ptBR })
+                      )}
                     </p>
 
                     <button
@@ -430,7 +443,7 @@ export default function Calendar() {
               <div className="space-y-5">
                 <div>
                   <CardTitle className="text-2xl">
-                    {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                    {formatSelectedDate(date)}
                   </CardTitle>
 
                   <CardDescription className="mt-1">
@@ -439,21 +452,22 @@ export default function Calendar() {
                 </div>
 
                 <div className="rounded-xl border bg-background p-2">
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
                     {filters.map((filter) => (
                       <button
                         key={filter.value}
                         type="button"
                         onClick={() => setActiveTab(filter.value)}
-                        className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                        className={`flex min-h-[44px] w-full items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
                           activeTab === filter.value
                             ? "border-primary bg-primary text-primary-foreground shadow-sm"
                             : "border-border bg-muted/40 text-muted-foreground hover:border-primary hover:text-primary"
                         }`}
                       >
-                        <span>{filter.label}</span>
+                        <span className="truncate">{filter.label}</span>
+
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          className={`flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-semibold ${
                             activeTab === filter.value
                               ? "bg-white/20 text-primary-foreground"
                               : "bg-background text-muted-foreground"
