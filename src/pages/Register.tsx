@@ -27,12 +27,46 @@ import { Loader2 } from "lucide-react";
 
 const USER_EMAIL_KEY = "socialpilot_user_email";
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
+const STORES_KEY = "socialpilot_demo_stores";
+
+type DocumentType = "cpf" | "cnpj";
+
+type StorePlan = "free" | "premium";
+type StorePlanStatus = "active" | "blocked" | "cancelled";
+
+type StoreRecord = {
+  id: number;
+  name: string;
+  email?: string | null;
+  ownerName?: string | null;
+  segment?: string | null;
+  cnpj?: string | null;
+  documentType?: DocumentType;
+  documentNumber?: string | null;
+  instagramConnected?: boolean;
+  facebookConnected?: boolean;
+  tiktokConnected?: boolean;
+  plan?: StorePlan;
+  planStatus?: StorePlanStatus;
+  postsLimit?: number | null;
+  postsUsed?: number;
+  createdAt?: string;
+  isMaster?: boolean;
+};
 
 function onlyNumbers(value: string) {
   return value.replace(/\D/g, "");
 }
 
-function formatCpfCnpj(value: string, type: "cpf" | "cnpj") {
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeDocument(value?: string) {
+  return onlyNumbers(value || "");
+}
+
+function formatCpfCnpj(value: string, type: DocumentType) {
   const numbers = onlyNumbers(value);
 
   if (type === "cpf") {
@@ -51,95 +85,93 @@ function formatCpfCnpj(value: string, type: "cpf" | "cnpj") {
     .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
 }
 
-function normalizeEmail(value: string) {
-  return value.trim().toLowerCase();
+function getStoredStores(): StoreRecord[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = localStorage.getItem(STORES_KEY);
+
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed;
+  } catch {
+    return [];
+  }
 }
 
-function normalizeDocument(value?: string) {
-  return onlyNumbers(value || "");
-}
+function saveStoredStores(stores: StoreRecord[]) {
+  if (typeof window === "undefined") return;
 
-function findDocumentsDeep(value: any, documents: string[] = []) {
-  if (!value) return documents;
-
-  if (typeof value === "string") {
-    const doc = normalizeDocument(value);
-
-    if (doc.length === 11 || doc.length === 14) {
-      documents.push(doc);
-    }
-
-    return documents;
-  }
-
-  if (Array.isArray(value)) {
-    value.forEach((item) => findDocumentsDeep(item, documents));
-    return documents;
-  }
-
-  if (typeof value === "object") {
-    const possibleDocument =
-      value.documentNumber ||
-      value.document_number ||
-      value.cpf ||
-      value.cnpj ||
-      value.document ||
-      value.companyDocument ||
-      value.company_document;
-
-    if (possibleDocument) {
-      const doc = normalizeDocument(String(possibleDocument));
-
-      if (doc.length === 11 || doc.length === 14) {
-        documents.push(doc);
-      }
-    }
-
-    Object.keys(value).forEach((key) => {
-      findDocumentsDeep(value[key], documents);
-    });
-  }
-
-  return documents;
+  localStorage.setItem(STORES_KEY, JSON.stringify(stores));
 }
 
 function documentAlreadyExists(documentNumber: string) {
-  if (typeof window === "undefined") return false;
+  const cleanDocument = normalizeDocument(documentNumber);
 
-  const newDocument = normalizeDocument(documentNumber);
+  if (!cleanDocument) return false;
 
-  if (!newDocument) return false;
+  const stores = getStoredStores();
 
-  const storages = [localStorage, sessionStorage];
+  return stores.some((store) => {
+    const savedDocument =
+      normalizeDocument(store.documentNumber || "") ||
+      normalizeDocument(store.cnpj || "");
 
-  for (const storage of storages) {
-    for (let i = 0; i < storage.length; i++) {
-      const key = storage.key(i);
+    return savedDocument === cleanDocument;
+  });
+}
 
-      if (!key) continue;
+function emailAlreadyExists(email: string) {
+  const cleanEmail = normalizeEmail(email);
 
-      const rawValue = storage.getItem(key);
+  const stores = getStoredStores();
 
-      if (!rawValue) continue;
+  return stores.some((store) => {
+    return normalizeEmail(store.email || "") === cleanEmail;
+  });
+}
 
-      try {
-        const parsed = JSON.parse(rawValue);
-        const documents = findDocumentsDeep(parsed);
+function createStoreForMaster(values: {
+  name: string;
+  email: string;
+  documentType: DocumentType;
+  documentNumber: string;
+}) {
+  const stores = getStoredStores();
 
-        if (documents.includes(newDocument)) {
-          return true;
-        }
-      } catch {
-        const documents = findDocumentsDeep(rawValue);
+  const nextId =
+    Math.max(0, ...stores.map((store) => Number(store.id) || 0)) + 1;
 
-        if (documents.includes(newDocument)) {
-          return true;
-        }
-      }
-    }
-  }
+  const cleanDocument = normalizeDocument(values.documentNumber);
+  const cleanEmail = normalizeEmail(values.email);
 
-  return false;
+  const newStore: StoreRecord = {
+    id: nextId,
+    name: values.name,
+    email: cleanEmail,
+    ownerName: values.name,
+    segment: "Não informado",
+    cnpj: cleanDocument,
+    documentType: values.documentType,
+    documentNumber: cleanDocument,
+    instagramConnected: false,
+    facebookConnected: false,
+    tiktokConnected: false,
+    plan: "free",
+    planStatus: "active",
+    postsLimit: 15,
+    postsUsed: 0,
+    createdAt: new Date().toISOString(),
+    isMaster: false,
+  };
+
+  saveStoredStores([...stores, newStore]);
+
+  return newStore;
 }
 
 const registerSchema = z
@@ -209,8 +241,14 @@ export default function Register() {
     setIsLoading(true);
 
     try {
-      const cleanDocument = normalizeDocument(values.documentNumber);
       const cleanEmail = normalizeEmail(values.email);
+      const cleanDocument = normalizeDocument(values.documentNumber);
+
+      if (emailAlreadyExists(cleanEmail)) {
+        toast.error("Este e-mail já está cadastrado. Faça login ou use outro e-mail.");
+        setIsLoading(false);
+        return;
+      }
 
       if (documentAlreadyExists(cleanDocument)) {
         toast.error(
@@ -229,18 +267,20 @@ export default function Register() {
         documentType: values.documentType,
         documentNumber: cleanDocument,
         cpf: values.documentType === "cpf" ? cleanDocument : "",
-        cnpj: values.documentType === "cnpj" ? cleanDocument : "",
+        cnpj: values.documentType === "cnpj" ? cleanDocument : cleanDocument,
         plan: "free",
         planStatus: "active",
         postsUsed: 0,
         postsLimit: 15,
       } as any);
 
-      /**
-       * CORREÇÃO:
-       * Garante que o sistema sabe exatamente qual e-mail está logado.
-       * Isso impede que a conta de teste herde dados da conta oficial.
-       */
+      createStoreForMaster({
+        name: values.name,
+        email: cleanEmail,
+        documentType: values.documentType,
+        documentNumber: cleanDocument,
+      });
+
       localStorage.setItem(USER_EMAIL_KEY, cleanEmail);
       localStorage.removeItem(MASTER_ACCESS_KEY);
 
