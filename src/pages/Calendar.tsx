@@ -10,7 +10,6 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Plus,
@@ -52,6 +51,7 @@ const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 export default function Calendar() {
   const [, setLocation] = useLocation();
+
   const [date, setDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState<CalendarFilter>("all");
@@ -69,12 +69,20 @@ export default function Calendar() {
         post.updatedAt ||
         post.updated_at ||
         post.createdAt ||
-        post.created_at
+        post.created_at ||
+        new Date()
     );
   };
 
   const getPostStatus = (post: any): CalendarFilter => {
-    return post.status;
+    const status = post.status || post.post_status || "draft";
+
+    if (status === "scheduled" || status === "agendado") return "scheduled";
+    if (status === "published" || status === "publicado") return "published";
+    if (status === "draft" || status === "rascunho") return "draft";
+    if (status === "failed" || status === "falhou") return "failed";
+
+    return "draft";
   };
 
   const monthDays = useMemo(() => {
@@ -108,19 +116,20 @@ export default function Calendar() {
   }, [selectedDayPosts, activeTab]);
 
   const scheduledCount =
-    selectedDayPosts.filter((post: any) => post.status === "scheduled")
+    selectedDayPosts.filter((post: any) => getPostStatus(post) === "scheduled")
       .length || 0;
 
   const publishedCount =
-    selectedDayPosts.filter((post: any) => post.status === "published")
+    selectedDayPosts.filter((post: any) => getPostStatus(post) === "published")
       .length || 0;
 
   const draftCount =
-    selectedDayPosts.filter((post: any) => post.status === "draft").length || 0;
+    selectedDayPosts.filter((post: any) => getPostStatus(post) === "draft")
+      .length || 0;
 
   const failedCount =
-    selectedDayPosts.filter((post: any) => post.status === "failed").length ||
-    0;
+    selectedDayPosts.filter((post: any) => getPostStatus(post) === "failed")
+      .length || 0;
 
   const getPostsCountText = () => {
     const count = filteredPosts.length;
@@ -141,12 +150,16 @@ export default function Calendar() {
     const dayPosts = getPostsForDay(day);
 
     return {
-      scheduled: dayPosts.filter((post: any) => post.status === "scheduled")
+      scheduled: dayPosts.filter(
+        (post: any) => getPostStatus(post) === "scheduled"
+      ).length,
+      published: dayPosts.filter(
+        (post: any) => getPostStatus(post) === "published"
+      ).length,
+      draft: dayPosts.filter((post: any) => getPostStatus(post) === "draft")
         .length,
-      published: dayPosts.filter((post: any) => post.status === "published")
+      failed: dayPosts.filter((post: any) => getPostStatus(post) === "failed")
         .length,
-      draft: dayPosts.filter((post: any) => post.status === "draft").length,
-      failed: dayPosts.filter((post: any) => post.status === "failed").length,
       total: dayPosts.length,
     };
   };
@@ -422,25 +435,22 @@ export default function Calendar() {
                   </CardDescription>
                 </div>
 
-                <Tabs
-                  value={activeTab}
-                  onValueChange={(value) =>
-                    setActiveTab(value as CalendarFilter)
-                  }
-                  className="w-full lg:w-auto"
-                >
-                  <TabsList className="grid h-auto w-full grid-cols-5 lg:w-auto">
-                    {filters.map((filter) => (
-                      <TabsTrigger
-                        key={filter.value}
-                        value={filter.value}
-                        className="text-xs"
-                      >
-                        {filter.label}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
+                <div className="flex w-full flex-wrap gap-2 lg:w-auto">
+                  {filters.map((filter) => (
+                    <button
+                      key={filter.value}
+                      type="button"
+                      onClick={() => setActiveTab(filter.value)}
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                        activeTab === filter.value
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"
+                      }`}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </CardHeader>
 
