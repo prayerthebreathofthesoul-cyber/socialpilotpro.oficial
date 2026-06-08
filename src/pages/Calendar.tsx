@@ -44,7 +44,7 @@ const filters: { value: CalendarFilter; label: string }[] = [
   { value: "scheduled", label: "Agendados" },
   { value: "published", label: "Publicados" },
   { value: "draft", label: "Rascunhos" },
-  { value: "failed", label: "Falhos" },
+  { value: "failed", label: "Falhas" },
 ];
 
 const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -56,7 +56,7 @@ export default function Calendar() {
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState<CalendarFilter>("all");
 
-  const { data: posts, isLoading } = useListPosts(undefined, {
+  const { data: posts = [], isLoading } = useListPosts(undefined, {
     query: { queryKey: getListPostsQueryKey() },
   });
 
@@ -109,8 +109,6 @@ export default function Calendar() {
   }, [currentMonth]);
 
   const selectedDayPosts = useMemo(() => {
-    if (!posts) return [];
-
     return posts.filter((post: any) => isSameDay(getPostDate(post), date));
   }, [posts, date]);
 
@@ -150,8 +148,6 @@ export default function Calendar() {
   };
 
   const getPostsForDay = (day: Date) => {
-    if (!posts) return [];
-
     return posts.filter((post: any) => isSameDay(getPostDate(post), day));
   };
 
@@ -176,6 +172,34 @@ export default function Calendar() {
   const getFilterCount = (filter: CalendarFilter) => {
     if (filter === "all") return selectedDayCounts.all;
     return selectedDayCounts[filter];
+  };
+
+  const getFilterActiveClass = (filter: CalendarFilter) => {
+    if (activeTab !== filter) {
+      return "border-border bg-muted/40 text-muted-foreground hover:border-primary hover:text-primary";
+    }
+
+    if (filter === "all") {
+      return "border-blue-700 bg-blue-700 text-white shadow-sm";
+    }
+
+    if (filter === "scheduled") {
+      return "border-orange-500 bg-orange-500 text-white shadow-sm";
+    }
+
+    if (filter === "published") {
+      return "border-green-600 bg-green-600 text-white shadow-sm";
+    }
+
+    if (filter === "draft") {
+      return "border-purple-600 bg-purple-600 text-white shadow-sm";
+    }
+
+    if (filter === "failed") {
+      return "border-red-600 bg-red-600 text-white shadow-sm";
+    }
+
+    return "border-primary bg-primary text-primary-foreground shadow-sm";
   };
 
   const goToNewPost = () => {
@@ -206,7 +230,7 @@ export default function Calendar() {
       return "Não há posts com falha nesta data.";
     }
 
-    return "Não há posts agendados, publicados, rascunhos ou falhos nesta data.";
+    return "Não há posts agendados, publicados, rascunhos ou com falhas nesta data.";
   };
 
   return (
@@ -369,7 +393,7 @@ export default function Calendar() {
 
                   <div className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                    Falhou
+                    Falha
                   </div>
                 </div>
               </CardContent>
@@ -428,7 +452,7 @@ export default function Calendar() {
                   </div>
 
                   <div>
-                    <p className="text-xs text-red-700">Falhos</p>
+                    <p className="text-xs text-red-700">Falhas</p>
                     <p className="text-xl font-bold text-red-800">
                       {selectedDayCounts.failed}
                     </p>
@@ -452,24 +476,24 @@ export default function Calendar() {
                 </div>
 
                 <div className="rounded-xl border bg-background p-2">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2">
                     {filters.map((filter) => (
                       <button
                         key={filter.value}
                         type="button"
                         onClick={() => setActiveTab(filter.value)}
-                        className={`flex min-h-[44px] w-full items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
-                          activeTab === filter.value
-                            ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                            : "border-border bg-muted/40 text-muted-foreground hover:border-primary hover:text-primary"
-                        }`}
+                        className={`flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${getFilterActiveClass(
+                          filter.value
+                        )}`}
                       >
-                        <span className="truncate">{filter.label}</span>
+                        <span className="whitespace-nowrap">
+                          {filter.label}
+                        </span>
 
                         <span
-                          className={`flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-semibold ${
+                          className={`flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-bold ${
                             activeTab === filter.value
-                              ? "bg-white/20 text-primary-foreground"
+                              ? "bg-white/20 text-white"
                               : "bg-background text-muted-foreground"
                           }`}
                         >
