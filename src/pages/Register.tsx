@@ -25,24 +25,165 @@ import {
 } from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
 
+const USER_EMAIL_KEY = "socialpilot_user_email";
+const MASTER_ACCESS_KEY = "socialpilot_master_access";
+
+function onlyNumbers(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function formatCpfCnpj(value: string, type: "cpf" | "cnpj") {
+  const numbers = onlyNumbers(value);
+
+  if (type === "cpf") {
+    return numbers
+      .slice(0, 11)
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
+  }
+
+  return numbers
+    .slice(0, 14)
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeDocument(value?: string) {
+  return onlyNumbers(value || "");
+}
+
+function findDocumentsDeep(value: any, documents: string[] = []) {
+  if (!value) return documents;
+
+  if (typeof value === "string") {
+    const doc = normalizeDocument(value);
+
+    if (doc.length === 11 || doc.length === 14) {
+      documents.push(doc);
+    }
+
+    return documents;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => findDocumentsDeep(item, documents));
+    return documents;
+  }
+
+  if (typeof value === "object") {
+    const possibleDocument =
+      value.documentNumber ||
+      value.document_number ||
+      value.cpf ||
+      value.cnpj ||
+      value.document ||
+      value.companyDocument ||
+      value.company_document;
+
+    if (possibleDocument) {
+      const doc = normalizeDocument(String(possibleDocument));
+
+      if (doc.length === 11 || doc.length === 14) {
+        documents.push(doc);
+      }
+    }
+
+    Object.keys(value).forEach((key) => {
+      findDocumentsDeep(value[key], documents);
+    });
+  }
+
+  return documents;
+}
+
+function documentAlreadyExists(documentNumber: string) {
+  if (typeof window === "undefined") return false;
+
+  const newDocument = normalizeDocument(documentNumber);
+
+  if (!newDocument) return false;
+
+  const storages = [localStorage, sessionStorage];
+
+  for (const storage of storages) {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+
+      if (!key) continue;
+
+      const rawValue = storage.getItem(key);
+
+      if (!rawValue) continue;
+
+      try {
+        const parsed = JSON.parse(rawValue);
+        const documents = findDocumentsDeep(parsed);
+
+        if (documents.includes(newDocument)) {
+          return true;
+        }
+      } catch {
+        const documents = findDocumentsDeep(rawValue);
+
+        if (documents.includes(newDocument)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 const registerSchema = z
   .object({
-    name: z.string().min(1, { message: "Informe o nome da empresa ou responsável" }),
+    name: z
+      .string()
+      .min(1, { message: "Informe o nome da empresa ou responsável" }),
+
     email: z
       .string()
       .min(1, { message: "Informe seu e-mail" })
       .email({ message: "Informe um e-mail válido" }),
+
     documentType: z.enum(["cpf", "cnpj"]),
-    documentNumber: z.string().optional().or(z.literal("")),
+
+    documentNumber: z
+      .string()
+      .min(1, { message: "Informe o CPF ou CNPJ" }),
+
     password: z
       .string()
       .min(6, { message: "A senha precisa ter pelo menos 6 caracteres" }),
+
     confirmPassword: z.string().min(1, { message: "Confirme a senha" }),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "As senhas não coincidem",
     path: ["confirmPassword"],
-  });
+  })
+  .refine(
+    (data) => {
+      const document = normalizeDocument(data.documentNumber);
+
+      if (data.documentType === "cpf") {
+        return document.length === 11;
+      }
+
+      return document.length === 14;
+    },
+    {
+      message: "Informe um CPF ou CNPJ válido",
+      path: ["documentNumber"],
+    }
+  );
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
@@ -68,13 +209,40 @@ export default function Register() {
     setIsLoading(true);
 
     try {
-      await signUpWithEmail(values.email, values.password, {
+      const cleanDocument = normalizeDocument(values.documentNumber);
+      const cleanEmail = normalizeEmail(values.email);
+
+      if (documentAlreadyExists(cleanDocument)) {
+        toast.error(
+          values.documentType === "cpf"
+            ? "Já existe uma conta cadastrada com este CPF."
+            : "Já existe uma conta cadastrada com este CNPJ."
+        );
+
+        setIsLoading(false);
+        return;
+      }
+
+      await signUpWithEmail(cleanEmail, values.password, {
         name: values.name,
         companyName: values.name,
-        cnpj: values.documentType === "cnpj" ? values.documentNumber || "" : "",
         documentType: values.documentType,
-        documentNumber: values.documentNumber || "",
+        documentNumber: cleanDocument,
+        cpf: values.documentType === "cpf" ? cleanDocument : "",
+        cnpj: values.documentType === "cnpj" ? cleanDocument : "",
+        plan: "free",
+        planStatus: "active",
+        postsUsed: 0,
+        postsLimit: 15,
       } as any);
+
+      /**
+       * CORREÇÃO:
+       * Garante que o sistema sabe exatamente qual e-mail está logado.
+       * Isso impede que a conta de teste herde dados da conta oficial.
+       */
+      localStorage.setItem(USER_EMAIL_KEY, cleanEmail);
+      localStorage.removeItem(MASTER_ACCESS_KEY);
 
       toast.success("Conta criada com sucesso!");
       setLocation("/dashboard");
@@ -125,6 +293,7 @@ export default function Register() {
                         ? "Nome Completo"
                         : "Nome da Empresa"}
                     </FormLabel>
+
                     <FormControl>
                       <Input
                         placeholder={
@@ -137,6 +306,7 @@ export default function Register() {
                         {...field}
                       />
                     </FormControl>
+
                     <FormMessage />
                   </FormItem>
                 )}
@@ -148,6 +318,7 @@ export default function Register() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>E-mail</FormLabel>
+
                     <FormControl>
                       <Input
                         placeholder="seu@email.com"
@@ -157,6 +328,7 @@ export default function Register() {
                         {...field}
                       />
                     </FormControl>
+
                     <FormMessage />
                   </FormItem>
                 )}
@@ -169,17 +341,22 @@ export default function Register() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Tipo de Cadastro</FormLabel>
+
                       <FormControl>
                         <select
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                           disabled={isLoading}
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(event) => {
+                            field.onChange(event);
+                            form.setValue("documentNumber", "");
+                          }}
                         >
                           <option value="cnpj">Pessoa Jurídica - CNPJ</option>
                           <option value="cpf">Pessoa Física - CPF</option>
                         </select>
                       </FormControl>
+
                       <FormMessage />
                     </FormItem>
                   )}
@@ -191,8 +368,9 @@ export default function Register() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        {documentType === "cpf" ? "CPF Opcional" : "CNPJ Opcional"}
+                        {documentType === "cpf" ? "CPF" : "CNPJ"}
                       </FormLabel>
+
                       <FormControl>
                         <Input
                           placeholder={
@@ -201,9 +379,18 @@ export default function Register() {
                               : "00.000.000/0000-00"
                           }
                           disabled={isLoading}
-                          {...field}
+                          value={field.value}
+                          onChange={(event) => {
+                            const formatted = formatCpfCnpj(
+                              event.target.value,
+                              documentType
+                            );
+
+                            field.onChange(formatted);
+                          }}
                         />
                       </FormControl>
+
                       <FormMessage />
                     </FormItem>
                   )}
@@ -217,6 +404,7 @@ export default function Register() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Senha</FormLabel>
+
                       <FormControl>
                         <Input
                           placeholder="******"
@@ -226,6 +414,7 @@ export default function Register() {
                           {...field}
                         />
                       </FormControl>
+
                       <FormMessage />
                     </FormItem>
                   )}
@@ -237,6 +426,7 @@ export default function Register() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Confirmar Senha</FormLabel>
+
                       <FormControl>
                         <Input
                           placeholder="******"
@@ -246,6 +436,7 @@ export default function Register() {
                           {...field}
                         />
                       </FormControl>
+
                       <FormMessage />
                     </FormItem>
                   )}
