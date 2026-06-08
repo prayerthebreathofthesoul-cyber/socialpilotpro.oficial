@@ -115,46 +115,92 @@ export default function Calendar() {
     return "draft";
   };
 
+  const parsePostDate = (value: any) => {
+    if (!value) return null;
+
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+
+    const valueAsString = String(value);
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(valueAsString)) {
+      const [year, month, day] = valueAsString.split("-").map(Number);
+      return new Date(year, month - 1, day);
+    }
+
+    const parsedDate = new Date(valueAsString);
+
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  };
+
+  const getPostDateCandidates = (post: any) => {
+    return [
+      post.publishedAt,
+      post.published_at,
+      post.postedAt,
+      post.posted_at,
+      post.datePublished,
+      post.date_published,
+
+      post.scheduledAt,
+      post.scheduled_at,
+      post.scheduleDate,
+      post.schedule_date,
+      post.scheduledFor,
+      post.scheduled_for,
+
+      post.updatedAt,
+      post.updated_at,
+      post.createdAt,
+      post.created_at,
+      post.date,
+    ]
+      .map(parsePostDate)
+      .filter(Boolean) as Date[];
+  };
+
+  const postBelongsToDay = (post: any, day: Date) => {
+    return getPostDateCandidates(post).some((postDate) =>
+      isSameDay(postDate, day)
+    );
+  };
+
   const getPostDate = (post: any) => {
     const status = getPostStatus(post);
+    const dates = getPostDateCandidates(post);
 
     if (status === "published") {
-      return new Date(
-        post.publishedAt ||
-          post.published_at ||
-          post.postedAt ||
-          post.posted_at ||
-          post.datePublished ||
-          post.date_published ||
-          post.updatedAt ||
-          post.updated_at ||
-          post.createdAt ||
-          post.created_at ||
-          new Date()
+      return (
+        parsePostDate(post.publishedAt) ||
+        parsePostDate(post.published_at) ||
+        parsePostDate(post.postedAt) ||
+        parsePostDate(post.posted_at) ||
+        parsePostDate(post.datePublished) ||
+        parsePostDate(post.date_published) ||
+        parsePostDate(post.updatedAt) ||
+        parsePostDate(post.updated_at) ||
+        parsePostDate(post.createdAt) ||
+        parsePostDate(post.created_at) ||
+        new Date()
       );
     }
 
     if (status === "scheduled") {
-      return new Date(
-        post.scheduledAt ||
-          post.scheduled_at ||
-          post.scheduleDate ||
-          post.schedule_date ||
-          post.scheduledFor ||
-          post.scheduled_for ||
-          post.createdAt ||
-          post.created_at ||
-          new Date()
+      return (
+        parsePostDate(post.scheduledAt) ||
+        parsePostDate(post.scheduled_at) ||
+        parsePostDate(post.scheduleDate) ||
+        parsePostDate(post.schedule_date) ||
+        parsePostDate(post.scheduledFor) ||
+        parsePostDate(post.scheduled_for) ||
+        parsePostDate(post.createdAt) ||
+        parsePostDate(post.created_at) ||
+        new Date()
       );
     }
 
-    return new Date(
-      post.updatedAt ||
-        post.updated_at ||
-        post.createdAt ||
-        post.created_at ||
-        new Date()
-    );
+    return dates[0] || new Date();
   };
 
   const monthDays = useMemo(() => {
@@ -170,7 +216,7 @@ export default function Calendar() {
   }, [currentMonth]);
 
   const selectedDayPosts = useMemo(() => {
-    return posts.filter((post: any) => isSameDay(getPostDate(post), date));
+    return posts.filter((post: any) => postBelongsToDay(post, date));
   }, [posts, date]);
 
   const selectedDayCounts = useMemo(() => {
@@ -209,7 +255,7 @@ export default function Calendar() {
   };
 
   const getPostsForDay = (day: Date) => {
-    return posts.filter((post: any) => isSameDay(getPostDate(post), day));
+    return posts.filter((post: any) => postBelongsToDay(post, day));
   };
 
   const getDayStatusCounts = (day: Date) => {
