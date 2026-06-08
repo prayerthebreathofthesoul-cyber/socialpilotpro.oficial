@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 
 export const AUTH_KEY = "spm_auth";
+export const USER_EMAIL_KEY = "socialpilot_user_email";
 
 /**
  * Mantemos esse marcador local para o Layout atual saber se o usuário está logado.
@@ -21,6 +22,21 @@ export const clearAuthToken = () => {
   localStorage.removeItem(AUTH_KEY);
 };
 
+export const setLoggedUserEmail = (email: string) => {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(USER_EMAIL_KEY, email);
+};
+
+export const getLoggedUserEmail = () => {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(USER_EMAIL_KEY);
+};
+
+export const clearLoggedUserEmail = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(USER_EMAIL_KEY);
+};
+
 export const isAuthenticated = () => {
   return !!getAuthToken();
 };
@@ -29,8 +45,10 @@ export const isAuthenticated = () => {
  * Login real com Supabase
  */
 export const signInWithEmail = async (email: string, password: string) => {
+  const cleanEmail = email.trim().toLowerCase();
+
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
+    email: cleanEmail,
     password,
   });
 
@@ -40,6 +58,12 @@ export const signInWithEmail = async (email: string, password: string) => {
 
   if (data.session?.access_token) {
     setAuthToken(data.session.access_token);
+  }
+
+  if (data.user?.email) {
+    setLoggedUserEmail(data.user.email);
+  } else {
+    setLoggedUserEmail(cleanEmail);
   }
 
   return data;
@@ -55,10 +79,13 @@ export const signUpWithEmail = async (
     name?: string;
     companyName?: string;
     cnpj?: string;
+    cpf?: string;
   }
 ) => {
+  const cleanEmail = email.trim().toLowerCase();
+
   const { data, error } = await supabase.auth.signUp({
-    email,
+    email: cleanEmail,
     password,
     options: {
       data: metadata || {},
@@ -73,6 +100,12 @@ export const signUpWithEmail = async (
     setAuthToken(data.session.access_token);
   }
 
+  if (data.user?.email) {
+    setLoggedUserEmail(data.user.email);
+  } else {
+    setLoggedUserEmail(cleanEmail);
+  }
+
   return data;
 };
 
@@ -81,7 +114,16 @@ export const signUpWithEmail = async (
  */
 export const signOut = async () => {
   await supabase.auth.signOut();
+
   clearAuthToken();
+  clearLoggedUserEmail();
+
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("spm_company_id");
+    localStorage.removeItem("spm_user");
+    localStorage.removeItem("spm_current_company");
+    localStorage.removeItem("socialpilot_current_company");
+  }
 };
 
 /**
@@ -93,8 +135,12 @@ export const getCurrentUser = async () => {
     error,
   } = await supabase.auth.getUser();
 
-  if (error) {
+  if (error || !user) {
     return null;
+  }
+
+  if (user.email) {
+    setLoggedUserEmail(user.email);
   }
 
   return user;
@@ -109,12 +155,16 @@ export const getCurrentSession = async () => {
     error,
   } = await supabase.auth.getSession();
 
-  if (error) {
+  if (error || !session) {
     return null;
   }
 
-  if (session?.access_token) {
+  if (session.access_token) {
     setAuthToken(session.access_token);
+  }
+
+  if (session.user?.email) {
+    setLoggedUserEmail(session.user.email);
   }
 
   return session;
