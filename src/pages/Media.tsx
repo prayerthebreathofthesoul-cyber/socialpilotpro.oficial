@@ -107,7 +107,7 @@ export default function Media() {
     }
   }
 
-  function handleDeleteMedia(id: string) {
+  function handleDeleteMedia(id: number) {
     deleteMedia.mutate(
       { id },
       {
@@ -263,7 +263,7 @@ export default function Media() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDeleteMedia(item.id)}
+                          onClick={() => handleDeleteMedia(Number(item.id))}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
