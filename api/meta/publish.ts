@@ -10,6 +10,8 @@ type HttpResult = {
   text: string;
 };
 
+const META_API_VERSION = "v25.0";
+
 function requestJson(
   urlString: string,
   options: {
@@ -172,7 +174,9 @@ async function getInstagramPermalink(params: {
 }) {
   const { mediaId, accessToken } = params;
 
-  const url = new URL(`https://graph.facebook.com/v20.0/${mediaId}`);
+  const url = new URL(
+    `https://graph.facebook.com/${META_API_VERSION}/${mediaId}`
+  );
 
   url.searchParams.set("fields", "permalink");
   url.searchParams.set("access_token", accessToken);
@@ -235,7 +239,9 @@ async function publishSinglePhotoToFacebook(params: {
 }) {
   const { pageId, pageAccessToken, imageUrl, caption } = params;
 
-  const url = new URL(`https://graph.facebook.com/v20.0/${pageId}/photos`);
+  const url = new URL(
+    `https://graph.facebook.com/${META_API_VERSION}/${pageId}/photos`
+  );
 
   url.searchParams.set("url", imageUrl);
   url.searchParams.set("caption", caption);
@@ -266,7 +272,7 @@ async function publishCarouselToFacebook(params: {
 
   for (const imageUrl of imageUrls) {
     const uploadUrl = new URL(
-      `https://graph.facebook.com/v20.0/${pageId}/photos`
+      `https://graph.facebook.com/${META_API_VERSION}/${pageId}/photos`
     );
 
     uploadUrl.searchParams.set("url", imageUrl);
@@ -290,7 +296,9 @@ async function publishCarouselToFacebook(params: {
     uploadedPhotos.push(uploadResult.data);
   }
 
-  const feedUrl = new URL(`https://graph.facebook.com/v20.0/${pageId}/feed`);
+  const feedUrl = new URL(
+    `https://graph.facebook.com/${META_API_VERSION}/${pageId}/feed`
+  );
 
   feedUrl.searchParams.set("message", caption);
   feedUrl.searchParams.set("access_token", pageAccessToken);
@@ -333,7 +341,7 @@ async function createInstagramImageContainer(params: {
   } = params;
 
   const url = new URL(
-    `https://graph.facebook.com/v20.0/${instagramBusinessAccountId}/media`
+    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media`
   );
 
   url.searchParams.set("image_url", imageUrl);
@@ -358,12 +366,8 @@ async function publishSingleImageToInstagram(params: {
   imageUrl: string;
   caption: string;
 }) {
-  const {
-    instagramBusinessAccountId,
-    pageAccessToken,
-    imageUrl,
-    caption,
-  } = params;
+  const { instagramBusinessAccountId, pageAccessToken, imageUrl, caption } =
+    params;
 
   const containerResult = await createInstagramImageContainer({
     instagramBusinessAccountId,
@@ -385,7 +389,7 @@ async function publishSingleImageToInstagram(params: {
   const creationId = containerResult.data.id;
 
   const publishUrl = new URL(
-    `https://graph.facebook.com/v20.0/${instagramBusinessAccountId}/media_publish`
+    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media_publish`
   );
 
   publishUrl.searchParams.set("creation_id", creationId);
@@ -419,12 +423,8 @@ async function publishCarouselToInstagram(params: {
   imageUrls: string[];
   caption: string;
 }) {
-  const {
-    instagramBusinessAccountId,
-    pageAccessToken,
-    imageUrls,
-    caption,
-  } = params;
+  const { instagramBusinessAccountId, pageAccessToken, imageUrls, caption } =
+    params;
 
   const childCreationIds: string[] = [];
 
@@ -451,7 +451,7 @@ async function publishCarouselToInstagram(params: {
   }
 
   const carouselUrl = new URL(
-    `https://graph.facebook.com/v20.0/${instagramBusinessAccountId}/media`
+    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media`
   );
 
   carouselUrl.searchParams.set("media_type", "CAROUSEL");
@@ -477,7 +477,7 @@ async function publishCarouselToInstagram(params: {
   const creationId = carouselResult.data.id;
 
   const publishUrl = new URL(
-    `https://graph.facebook.com/v20.0/${instagramBusinessAccountId}/media_publish`
+    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media_publish`
   );
 
   publishUrl.searchParams.set("creation_id", creationId);
