@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "business_management",
     ].join(",");
 
-    const authUrl = new URL("https://www.facebook.com/v20.0/dialog/oauth");
+    const authUrl = new URL("https://www.facebook.com/v25.0/dialog/oauth");
 
     authUrl.searchParams.set("client_id", appId);
     authUrl.searchParams.set("redirect_uri", redirectUri);
@@ -32,11 +32,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     authUrl.searchParams.set("scope", scopes);
     authUrl.searchParams.set("response_type", "code");
 
-    // Força a Meta a pedir novamente autorização e seleção de ativos
+    // Força a Meta a pedir novamente autorização das permissões necessárias
     authUrl.searchParams.set("auth_type", "rerequest");
-
-    // Ajuda a evitar reaproveitar uma sessão/autorização antiga
-    authUrl.searchParams.set("force_authentication", "1");
 
     return res.redirect(authUrl.toString());
   } catch (error) {
