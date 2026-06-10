@@ -7,6 +7,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const state = String(req.query.state || "").trim();
 
     if (!clientKey || !redirectUri) {
+      console.error("Configuração do TikTok ausente:", {
+        hasClientKey: Boolean(clientKey),
+        hasRedirectUri: Boolean(redirectUri),
+      });
+
       return res.status(500).send("Configuração do TikTok ausente.");
     }
 
@@ -14,11 +19,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).send("State ausente.");
     }
 
-    const scopes = [
-      "user.info.basic",
-      "video.upload",
-      "video.publish",
-    ].join(",");
+    /*
+      IMPORTANTE:
+      Por enquanto usamos apenas user.info.basic para testar a conexão/login.
+
+      Não coloque ainda:
+      - video.upload
+      - video.publish
+
+      Esses escopos de publicação entram depois, quando o app estiver configurado
+      e aprovado no TikTok Developers.
+    */
+    const scopes = ["user.info.basic"].join(",");
 
     const authUrl = new URL("https://www.tiktok.com/v2/auth/authorize/");
 
@@ -27,6 +39,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("scope", scopes);
     authUrl.searchParams.set("response_type", "code");
+
+    console.log("Redirecionando para OAuth do TikTok:", {
+      hasClientKey: Boolean(clientKey),
+      redirectUri,
+      scopes,
+      hasState: Boolean(state),
+    });
 
     return res.redirect(authUrl.toString());
   } catch (error) {
