@@ -146,6 +146,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
   const [publishSuccess, setPublishSuccess] = useState<{
     postUrl: string | null;
+    facebookShareUrl: string | null;
     platforms: string[];
   } | null>(null);
 
@@ -250,14 +251,20 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     const currentMediaUrls = form.getValues("mediaUrls") || [];
     const hasVideo = mediaKind === "video";
 
-    if ((nextType === "reels" || nextType === "video") && currentMediaUrls.length > 1) {
+    if (
+      (nextType === "reels" || nextType === "video") &&
+      currentMediaUrls.length > 1
+    ) {
       toast.error(
         "Reels e vídeo aceitam apenas uma mídia. Remova o carrossel antes de mudar o tipo."
       );
       return;
     }
 
-    if (nextType === "reels" && form.getValues("platforms").includes("facebook")) {
+    if (
+      nextType === "reels" &&
+      form.getValues("platforms").includes("facebook")
+    ) {
       toast.info(
         "Reels será usado principalmente para Instagram. Para Facebook, use o tipo Vídeo."
       );
@@ -428,7 +435,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     if (nextMediaUrls.length === 0) {
       setMediaKind(null);
     } else {
-      setMediaKind(nextMediaUrls.some((url) => isVideoUrl(url)) ? "video" : "image");
+      setMediaKind(
+        nextMediaUrls.some((url) => isVideoUrl(url)) ? "video" : "image"
+      );
     }
 
     toast.success("Mídia removida.");
@@ -554,9 +563,19 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     return null;
   };
 
+  const getFacebookShareUrl = (publishResult: any, fallbackUrl: string | null) => {
+    const facebookUrl = publishResult?.postUrls?.facebook;
+    const facebookResultUrl = publishResult?.results?.facebook?.url;
+
+    if (facebookUrl) return facebookUrl;
+    if (facebookResultUrl) return facebookResultUrl;
+
+    return fallbackUrl;
+  };
+
   const formatPlatformName = (platform: string) => {
     if (platform === "instagram") return "Instagram";
-    if (platform === "facebook") return "Facebook";
+    if (platform === "facebook") return "Página do Facebook";
     if (platform === "tiktok") return "TikTok";
     return platform;
   };
@@ -605,7 +624,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
 
     if (platforms.includes("instagram") && platforms.includes("facebook")) {
-      return "Publicação feita com sucesso nas duas redes sociais!";
+      return "Publicação feita com sucesso no Instagram e na Página do Facebook!";
     }
 
     return `Publicação feita com sucesso em ${formatSelectedPlatforms(
@@ -739,9 +758,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         setPublishingOverlay(false);
 
         const postUrl = getPublishedPostUrl(publishResult);
+        const facebookShareUrl = getFacebookShareUrl(publishResult, postUrl);
 
         setPublishSuccess({
           postUrl,
+          facebookShareUrl,
           platforms: values.platforms,
         });
 
@@ -847,26 +868,53 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
               </p>
 
               <p className="text-base text-slate-600 mt-3">
-                Agora você pode abrir o post publicado ou voltar ao calendário.
+                Agora você pode abrir o post publicado, compartilhar no seu
+                perfil pessoal do Facebook ou voltar ao calendário.
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
                 {publishSuccess.postUrl && (
-                  <Button
-                    type="button"
-                    size="lg"
-                    className="bg-green-700 hover:bg-green-800 text-white text-base px-6 py-6"
-                    onClick={() =>
-                      window.open(
-                        publishSuccess.postUrl!,
-                        "_blank",
-                        "noopener,noreferrer"
-                      )
-                    }
-                  >
-                    <ExternalLink className="w-5 h-5 mr-2" />
-                    Ver post publicado
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      size="lg"
+                      className="bg-green-700 hover:bg-green-800 text-white text-base px-6 py-6"
+                      onClick={() =>
+                        window.open(
+                          publishSuccess.postUrl!,
+                          "_blank",
+                          "noopener,noreferrer"
+                        )
+                      }
+                    >
+                      <ExternalLink className="w-5 h-5 mr-2" />
+                      Ver post publicado
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      className="text-base px-6 py-6 border-blue-600 text-blue-700 hover:bg-blue-50"
+                      onClick={() => {
+                        const urlToShare =
+                          publishSuccess.facebookShareUrl ||
+                          publishSuccess.postUrl ||
+                          "";
+
+                        const shareUrl = encodeURIComponent(urlToShare);
+
+                        window.open(
+                          `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`,
+                          "_blank",
+                          "noopener,noreferrer"
+                        );
+                      }}
+                    >
+                      <Facebook className="w-5 h-5 mr-2" />
+                      Compartilhar no meu perfil
+                    </Button>
+                  </>
                 )}
 
                 <Button
@@ -926,7 +974,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             : field.value === "reels"
                               ? "Reels usa vídeo vertical. Recomendado: MP4 1080x1920."
                               : field.value === "video"
-                                ? "Vídeo para Facebook ou Instagram. Recomendado: MP4."
+                                ? "Vídeo para Página do Facebook ou Instagram. Recomendado: MP4."
                                 : "Feed usa imagem quadrada ou horizontal. Recomendado: 1080x1080 ou 1200x1200."}
                         </FormDescription>
 
@@ -977,7 +1025,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             />
                             <span className="font-normal flex items-center gap-2">
                               <Facebook className="w-4 h-4 text-blue-600" />
-                              Facebook
+                              Página do Facebook
                             </span>
                           </label>
 
@@ -1082,7 +1130,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                               {mediaUrls.map((url, index) => {
-                                const itemIsVideo = isVideoUrl(url) || mediaKind === "video";
+                                const itemIsVideo =
+                                  isVideoUrl(url) || mediaKind === "video";
 
                                 return (
                                   <div
