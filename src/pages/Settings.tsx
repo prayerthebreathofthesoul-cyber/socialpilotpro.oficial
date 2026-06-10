@@ -76,6 +76,7 @@ export default function Settings() {
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
   const [isConnectingMeta, setIsConnectingMeta] = useState(false);
+  const [isConnectingTiktok, setIsConnectingTiktok] = useState(false);
 
   const [userEmail, setUserEmail] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -133,26 +134,36 @@ export default function Settings() {
 
       setCompany(companyData);
 
-      const { data: socialAccounts } = await supabase
-        .from("social_accounts")
-        .select("platform,status")
-        .eq("company_id", companyData.id)
-        .eq("status", "connected");
+      const { data: socialAccounts, error: socialAccountsError } =
+        await supabase
+          .from("social_accounts")
+          .select("platform,status,is_connected")
+          .eq("company_id", companyData.id);
+
+      if (socialAccountsError) {
+        console.error(socialAccountsError);
+        toast.error("Erro ao carregar contas sociais conectadas.");
+      }
 
       const connectedPlatforms = socialAccounts || [];
+
+      const isPlatformConnected = (platform: string) => {
+        return connectedPlatforms.some(
+          (account) =>
+            account.platform === platform &&
+            account.status === "connected" &&
+            account.is_connected !== false
+        );
+      };
 
       setFormData({
         name: companyData.name || "",
         segment: companyData.segment || "",
         documentType: (companyData.document_type as DocumentType) || "cnpj",
         documentNumber: companyData.document_number || companyData.cnpj || "",
-        instagramConnected: connectedPlatforms.some(
-          (account) => account.platform === "instagram"
-        ),
-        facebookConnected: connectedPlatforms.some(
-          (account) => account.platform === "facebook"
-        ),
-        tiktokConnected: false,
+        instagramConnected: isPlatformConnected("instagram"),
+        facebookConnected: isPlatformConnected("facebook"),
+        tiktokConnected: isPlatformConnected("tiktok"),
       });
     } catch (error) {
       console.error(error);
@@ -166,17 +177,16 @@ export default function Settings() {
     loadAccountData();
 
     const searchParams = new URLSearchParams(window.location.search);
+
     const metaStatus = searchParams.get("meta");
+    const tiktokStatus = searchParams.get("tiktok");
 
     if (metaStatus === "connected") {
       toast.success("Conta Meta conectada com sucesso!");
       window.history.replaceState({}, "", "/settings");
     }
 
-    if (
-      metaStatus &&
-      metaStatus !== "connected"
-    ) {
+    if (metaStatus && metaStatus !== "connected") {
       const messages: Record<string, string> = {
         error: "Não foi possível conectar com a Meta.",
         invalid_state: "Conexão inválida. Tente conectar novamente.",
@@ -190,6 +200,28 @@ export default function Settings() {
       };
 
       toast.error(messages[metaStatus] || "Erro ao conectar com a Meta.");
+      window.history.replaceState({}, "", "/settings");
+    }
+
+    if (tiktokStatus === "connected") {
+      toast.success("Conta TikTok conectada com sucesso!");
+      window.history.replaceState({}, "", "/settings");
+    }
+
+    if (tiktokStatus && tiktokStatus !== "connected") {
+      const messages: Record<string, string> = {
+        error: "Não foi possível conectar com o TikTok.",
+        invalid_state: "Conexão inválida. Tente conectar novamente.",
+        expired_state: "Tempo de conexão expirado. Tente novamente.",
+        token_error: "Erro ao gerar token do TikTok.",
+        creator_error: "Erro ao buscar dados do criador no TikTok.",
+        save_error: "Erro ao salvar a conta TikTok conectada.",
+        scope_error:
+          "Permissões insuficientes. Verifique os escopos do app TikTok.",
+        unexpected_error: "Erro inesperado ao conectar com o TikTok.",
+      };
+
+      toast.error(messages[tiktokStatus] || "Erro ao conectar com o TikTok.");
       window.history.replaceState({}, "", "/settings");
     }
   }, []);
@@ -327,7 +359,7 @@ export default function Settings() {
     }
   };
 
-  const handleConnectSocial = async () => {
+  const handleConnectMeta = async () => {
     if (!company || !profile) {
       toast.error("Dados da conta não encontrados.");
       return;
@@ -372,6 +404,54 @@ export default function Settings() {
         error?.message || "Não foi possível iniciar a conexão com a Meta."
       );
       setIsConnectingMeta(false);
+    }
+  };
+
+  const handleConnectTiktok = async () => {
+    if (!company || !profile) {
+      toast.error("Dados da conta não encontrados.");
+      return;
+    }
+
+    setIsConnectingTiktok(true);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        toast.error("Usuário não autenticado.");
+        return;
+      }
+
+      const state =
+        crypto.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      const { error } = await supabase.from("tiktok_oauth_states").insert({
+        state,
+        company_id: company.id,
+        user_id: user.id,
+        expires_at: expiresAt,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      window.location.href = `/api/tiktok/connect?state=${encodeURIComponent(
+        state
+      )}`;
+    } catch (error: any) {
+      console.error(error);
+      toast.error(
+        error?.message || "Não foi possível iniciar a conexão com o TikTok."
+      );
+      setIsConnectingTiktok(false);
     }
   };
 
@@ -572,13 +652,13 @@ export default function Settings() {
                 <CardHeader>
                   <CardTitle>Contas Conectadas</CardTitle>
                   <CardDescription>
-                    Conecte Facebook e Instagram para preparar suas postagens em
-                    um só lugar.
+                    Conecte Instagram, Página Facebook e TikTok para preparar
+                    suas postagens em um só lugar.
                   </CardDescription>
                 </CardHeader>
 
                 <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg">
                     <div className="flex items-center gap-4">
                       <div className="bg-pink-100 dark:bg-pink-900/30 p-2 rounded-full text-pink-600 dark:text-pink-400">
                         <Instagram className="w-5 h-5" />
@@ -599,8 +679,9 @@ export default function Settings() {
                       variant={
                         formData.instagramConnected ? "secondary" : "outline"
                       }
-                      onClick={handleConnectSocial}
+                      onClick={handleConnectMeta}
                       disabled={isConnectingMeta}
+                      className="sm:w-auto w-full"
                     >
                       {isConnectingMeta
                         ? "Conectando..."
@@ -610,18 +691,18 @@ export default function Settings() {
                     </Button>
                   </div>
 
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg">
                     <div className="flex items-center gap-4">
                       <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-full text-blue-600 dark:text-blue-400">
                         <Facebook className="w-5 h-5" />
                       </div>
 
                       <div>
-                        <p className="font-medium">Facebook</p>
+                        <p className="font-medium">Página Facebook</p>
                         <p className="text-sm text-muted-foreground">
                           {formData.facebookConnected
-                            ? "Conectado"
-                            : "Não conectado"}
+                            ? "Conectada"
+                            : "Não conectada"}
                         </p>
                       </div>
                     </div>
@@ -631,8 +712,9 @@ export default function Settings() {
                       variant={
                         formData.facebookConnected ? "secondary" : "outline"
                       }
-                      onClick={handleConnectSocial}
+                      onClick={handleConnectMeta}
                       disabled={isConnectingMeta}
+                      className="sm:w-auto w-full"
                     >
                       {isConnectingMeta
                         ? "Conectando..."
@@ -642,7 +724,7 @@ export default function Settings() {
                     </Button>
                   </div>
 
-                  <div className="flex items-center justify-between p-4 border rounded-lg opacity-75">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 border rounded-lg">
                     <div className="flex items-center gap-4">
                       <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded-full text-slate-900 dark:text-slate-100">
                         <SiTiktok className="w-5 h-5" />
@@ -651,14 +733,37 @@ export default function Settings() {
                       <div>
                         <p className="font-medium">TikTok</p>
                         <p className="text-sm text-muted-foreground">
-                          Integração em breve
+                          {formData.tiktokConnected
+                            ? "Conectado"
+                            : "Não conectado"}
                         </p>
                       </div>
                     </div>
 
-                    <Button type="button" variant="outline" disabled>
-                      Em breve
+                    <Button
+                      type="button"
+                      variant={formData.tiktokConnected ? "secondary" : "outline"}
+                      onClick={handleConnectTiktok}
+                      disabled={isConnectingTiktok}
+                      className="sm:w-auto w-full"
+                    >
+                      {isConnectingTiktok
+                        ? "Conectando..."
+                        : formData.tiktokConnected
+                          ? "Reconectar"
+                          : "Conectar"}
                     </Button>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <p className="font-semibold">Observação sobre TikTok</p>
+                    <p className="mt-1">
+                      Para publicar diretamente no TikTok, o app precisa estar
+                      configurado no TikTok for Developers com as permissões de
+                      publicação aprovadas. Se ainda não estiver aprovado, a
+                      conexão pode funcionar, mas a publicação direta pode ser
+                      recusada pela API do TikTok.
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -797,7 +902,7 @@ export default function Settings() {
                       Avisos por E-mail
                     </h4>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-4">
                       <div className="space-y-0.5">
                         <Label>Post salvo com sucesso</Label>
                         <p className="text-sm text-muted-foreground">
@@ -809,7 +914,7 @@ export default function Settings() {
                       <Switch defaultChecked />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-4">
                       <div className="space-y-0.5">
                         <Label>Falha na publicação</Label>
                         <p className="text-sm text-muted-foreground">
@@ -826,7 +931,7 @@ export default function Settings() {
                       Resumo e Relatórios
                     </h4>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-4">
                       <div className="space-y-0.5">
                         <Label>Resumo Semanal</Label>
                         <p className="text-sm text-muted-foreground">
