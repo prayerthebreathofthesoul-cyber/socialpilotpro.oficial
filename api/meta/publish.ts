@@ -12,6 +12,10 @@ type HttpResult = {
 
 const META_API_VERSION = "v25.0";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function requestJson(
   urlString: string,
   options: {
@@ -137,8 +141,10 @@ function getMediaUrls(post: any): string[] {
   const singleUrl =
     post.media_url ||
     post.image_url ||
+    post.video_url ||
     post.mediaUrl ||
     post.imageUrl ||
+    post.videoUrl ||
     post.media ||
     "";
 
@@ -153,6 +159,21 @@ function isPublicHttpsUrl(url: string) {
   return /^https:\/\/.+/i.test(url);
 }
 
+function isVideoUrl(url: string) {
+  const cleanUrl = url.split("?")[0].toLowerCase();
+
+  return (
+    cleanUrl.endsWith(".mp4") ||
+    cleanUrl.endsWith(".mov") ||
+    cleanUrl.endsWith(".m4v") ||
+    cleanUrl.endsWith(".webm")
+  );
+}
+
+function normalizePostType(post: any) {
+  return String(post.type || post.post_type || "feed").toLowerCase();
+}
+
 function buildFacebookPostUrl(resultData: any) {
   const postId = resultData?.post_id || resultData?.id;
   const photoId = resultData?.id;
@@ -163,6 +184,16 @@ function buildFacebookPostUrl(resultData: any) {
 
   if (photoId) {
     return `https://www.facebook.com/photo.php?fbid=${photoId}`;
+  }
+
+  return null;
+}
+
+function buildFacebookVideoUrl(resultData: any) {
+  const videoId = resultData?.id;
+
+  if (videoId) {
+    return `https://www.facebook.com/${videoId}`;
   }
 
   return null;
@@ -196,6 +227,68 @@ async function getInstagramPermalink(params: {
   }
 
   return result.data?.permalink || null;
+}
+
+async function waitInstagramContainer(params: {
+  creationId: string;
+  accessToken: string;
+}) {
+  const { creationId, accessToken } = params;
+
+  for (let attempt = 1; attempt <= 12; attempt++) {
+    const url = new URL(
+      `https://graph.facebook.com/${META_API_VERSION}/${creationId}`
+    );
+
+    url.searchParams.set("fields", "status_code,status");
+    url.searchParams.set("access_token", accessToken);
+
+    const result = await requestJson(url.toString(), {
+      method: "GET",
+    });
+
+    if (!result.ok) {
+      return {
+        ok: false,
+        statusCode: null,
+        result,
+      };
+    }
+
+    const statusCode = result.data?.status_code;
+
+    if (statusCode === "FINISHED") {
+      return {
+        ok: true,
+        statusCode,
+        result,
+      };
+    }
+
+    if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+      return {
+        ok: false,
+        statusCode,
+        result,
+      };
+    }
+
+    await sleep(5000);
+  }
+
+  return {
+    ok: false,
+    statusCode: "TIMEOUT",
+    result: {
+      status: 408,
+      ok: false,
+      data: {
+        error:
+          "O vídeo ainda não terminou de processar no Instagram. Tente novamente em alguns instantes.",
+      },
+      text: "Timeout aguardando processamento do container do Instagram.",
+    },
+  };
 }
 
 async function updatePostStatus(params: {
@@ -254,9 +347,38 @@ async function publishSinglePhotoToFacebook(params: {
 
   return {
     ok: result.ok,
-    step: "single_photo",
+    step: "facebook_single_photo",
     result,
     url: buildFacebookPostUrl(result.data),
+  };
+}
+
+async function publishVideoToFacebook(params: {
+  pageId: string;
+  pageAccessToken: string;
+  videoUrl: string;
+  caption: string;
+}) {
+  const { pageId, pageAccessToken, videoUrl, caption } = params;
+
+  const url = new URL(
+    `https://graph.facebook.com/${META_API_VERSION}/${pageId}/videos`
+  );
+
+  url.searchParams.set("file_url", videoUrl);
+  url.searchParams.set("description", caption);
+  url.searchParams.set("published", "true");
+  url.searchParams.set("access_token", pageAccessToken);
+
+  const result = await requestJson(url.toString(), {
+    method: "POST",
+  });
+
+  return {
+    ok: result.ok && Boolean(result.data?.id),
+    step: "facebook_video",
+    result,
+    url: buildFacebookVideoUrl(result.data),
   };
 }
 
@@ -286,7 +408,7 @@ async function publishCarouselToFacebook(params: {
     if (!uploadResult.ok || !uploadResult.data?.id) {
       return {
         ok: false,
-        step: "upload_unpublished_photo",
+        step: "facebook_upload_unpublished_photo",
         uploadedPhotos,
         result: uploadResult,
         url: null,
@@ -318,7 +440,7 @@ async function publishCarouselToFacebook(params: {
 
   return {
     ok: feedResult.ok && Boolean(feedResult.data?.id),
-    step: "create_multi_photo_post",
+    step: "facebook_create_multi_photo_post",
     uploadedPhotos,
     result: feedResult,
     url: buildFacebookPostUrl(feedResult.data),
@@ -360,6 +482,52 @@ async function createInstagramImageContainer(params: {
   });
 }
 
+async function createInstagramReelsContainer(params: {
+  instagramBusinessAccountId: string;
+  pageAccessToken: string;
+  videoUrl: string;
+  caption: string;
+}) {
+  const {
+    instagramBusinessAccountId,
+    pageAccessToken,
+    videoUrl,
+    caption,
+  } = params;
+
+  const url = new URL(
+    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media`
+  );
+
+  url.searchParams.set("media_type", "REELS");
+  url.searchParams.set("video_url", videoUrl);
+  url.searchParams.set("caption", caption);
+  url.searchParams.set("access_token", pageAccessToken);
+
+  return requestJson(url.toString(), {
+    method: "POST",
+  });
+}
+
+async function publishInstagramCreation(params: {
+  instagramBusinessAccountId: string;
+  pageAccessToken: string;
+  creationId: string;
+}) {
+  const { instagramBusinessAccountId, pageAccessToken, creationId } = params;
+
+  const publishUrl = new URL(
+    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media_publish`
+  );
+
+  publishUrl.searchParams.set("creation_id", creationId);
+  publishUrl.searchParams.set("access_token", pageAccessToken);
+
+  return requestJson(publishUrl.toString(), {
+    method: "POST",
+  });
+}
+
 async function publishSingleImageToInstagram(params: {
   instagramBusinessAccountId: string;
   pageAccessToken: string;
@@ -379,7 +547,7 @@ async function publishSingleImageToInstagram(params: {
   if (!containerResult.ok || !containerResult.data?.id) {
     return {
       ok: false,
-      step: "create_single_container",
+      step: "instagram_create_single_image_container",
       creationId: null,
       result: containerResult,
       permalink: null,
@@ -388,15 +556,10 @@ async function publishSingleImageToInstagram(params: {
 
   const creationId = containerResult.data.id;
 
-  const publishUrl = new URL(
-    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media_publish`
-  );
-
-  publishUrl.searchParams.set("creation_id", creationId);
-  publishUrl.searchParams.set("access_token", pageAccessToken);
-
-  const publishResult = await requestJson(publishUrl.toString(), {
-    method: "POST",
+  const publishResult = await publishInstagramCreation({
+    instagramBusinessAccountId,
+    pageAccessToken,
+    creationId,
   });
 
   let permalink: string | null = null;
@@ -410,8 +573,78 @@ async function publishSingleImageToInstagram(params: {
 
   return {
     ok: publishResult.ok && Boolean(publishResult.data?.id),
-    step: "publish_single_container",
+    step: "instagram_publish_single_image",
     creationId,
+    result: publishResult,
+    permalink,
+  };
+}
+
+async function publishReelsToInstagram(params: {
+  instagramBusinessAccountId: string;
+  pageAccessToken: string;
+  videoUrl: string;
+  caption: string;
+}) {
+  const { instagramBusinessAccountId, pageAccessToken, videoUrl, caption } =
+    params;
+
+  const containerResult = await createInstagramReelsContainer({
+    instagramBusinessAccountId,
+    pageAccessToken,
+    videoUrl,
+    caption,
+  });
+
+  if (!containerResult.ok || !containerResult.data?.id) {
+    return {
+      ok: false,
+      step: "instagram_create_reels_container",
+      creationId: null,
+      waitResult: null,
+      result: containerResult,
+      permalink: null,
+    };
+  }
+
+  const creationId = containerResult.data.id;
+
+  const waitResult = await waitInstagramContainer({
+    creationId,
+    accessToken: pageAccessToken,
+  });
+
+  if (!waitResult.ok) {
+    return {
+      ok: false,
+      step: "instagram_wait_reels_container",
+      creationId,
+      waitResult,
+      result: waitResult.result,
+      permalink: null,
+    };
+  }
+
+  const publishResult = await publishInstagramCreation({
+    instagramBusinessAccountId,
+    pageAccessToken,
+    creationId,
+  });
+
+  let permalink: string | null = null;
+
+  if (publishResult.ok && publishResult.data?.id) {
+    permalink = await getInstagramPermalink({
+      mediaId: publishResult.data.id,
+      accessToken: pageAccessToken,
+    });
+  }
+
+  return {
+    ok: publishResult.ok && Boolean(publishResult.data?.id),
+    step: "instagram_publish_reels",
+    creationId,
+    waitResult,
     result: publishResult,
     permalink,
   };
@@ -439,7 +672,7 @@ async function publishCarouselToInstagram(params: {
     if (!childResult.ok || !childResult.data?.id) {
       return {
         ok: false,
-        step: "create_carousel_child",
+        step: "instagram_create_carousel_child",
         childCreationIds,
         creationId: null,
         result: childResult,
@@ -466,7 +699,7 @@ async function publishCarouselToInstagram(params: {
   if (!carouselResult.ok || !carouselResult.data?.id) {
     return {
       ok: false,
-      step: "create_carousel_container",
+      step: "instagram_create_carousel_container",
       childCreationIds,
       creationId: null,
       result: carouselResult,
@@ -476,15 +709,10 @@ async function publishCarouselToInstagram(params: {
 
   const creationId = carouselResult.data.id;
 
-  const publishUrl = new URL(
-    `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media_publish`
-  );
-
-  publishUrl.searchParams.set("creation_id", creationId);
-  publishUrl.searchParams.set("access_token", pageAccessToken);
-
-  const publishResult = await requestJson(publishUrl.toString(), {
-    method: "POST",
+  const publishResult = await publishInstagramCreation({
+    instagramBusinessAccountId,
+    pageAccessToken,
+    creationId,
   });
 
   let permalink: string | null = null;
@@ -498,7 +726,7 @@ async function publishCarouselToInstagram(params: {
 
   return {
     ok: publishResult.ok && Boolean(publishResult.data?.id),
-    step: "publish_carousel_container",
+    step: "instagram_publish_carousel",
     childCreationIds,
     creationId,
     result: publishResult,
@@ -575,54 +803,89 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const imageUrls = getMediaUrls(post);
+    const mediaUrls = getMediaUrls(post);
     const caption = buildCaption(post);
     const platforms = normalizePlatforms(post.platforms);
+    const postType = normalizePostType(post);
 
-    if (imageUrls.length === 0) {
+    if (mediaUrls.length === 0) {
       await updatePostStatus({
         supabaseUrl,
         headers,
         postId,
         status: "failed",
-        errorMessage: "Post sem imagem.",
+        errorMessage: "Post sem mídia.",
       });
 
       return res.status(400).json({
-        error: "Post sem imagem.",
+        error: "Post sem mídia.",
       });
     }
 
-    if (imageUrls.length > 10) {
+    if (mediaUrls.length > 10) {
       await updatePostStatus({
         supabaseUrl,
         headers,
         postId,
         status: "failed",
-        errorMessage: "O carrossel pode ter no máximo 10 imagens.",
+        errorMessage: "O carrossel pode ter no máximo 10 mídias.",
       });
 
       return res.status(400).json({
-        error: "O carrossel pode ter no máximo 10 imagens.",
+        error: "O carrossel pode ter no máximo 10 mídias.",
       });
     }
 
-    const invalidImageUrl = imageUrls.find((url) => !isPublicHttpsUrl(url));
+    const invalidMediaUrl = mediaUrls.find((url) => !isPublicHttpsUrl(url));
 
-    if (invalidImageUrl) {
+    if (invalidMediaUrl) {
       await updatePostStatus({
         supabaseUrl,
         headers,
         postId,
         status: "failed",
         errorMessage:
-          "Todas as imagens precisam ser URLs públicas https. Base64/data:image não funciona na API da Meta.",
+          "Todas as mídias precisam ser URLs públicas https. Base64/data:image não funciona na API da Meta.",
       });
 
       return res.status(400).json({
         error:
-          "Todas as imagens precisam ser URLs públicas https. Base64/data:image não funciona na API da Meta.",
-        invalidMediaUrlStartsWith: invalidImageUrl.slice(0, 40),
+          "Todas as mídias precisam ser URLs públicas https. Base64/data:image não funciona na API da Meta.",
+        invalidMediaUrlStartsWith: invalidMediaUrl.slice(0, 40),
+      });
+    }
+
+    const hasVideo = mediaUrls.some((url) => isVideoUrl(url));
+    const isCarousel = !hasVideo && mediaUrls.length > 1;
+    const isVideoPost = hasVideo || postType === "video" || postType === "reels";
+
+    if (hasVideo && mediaUrls.length > 1) {
+      await updatePostStatus({
+        supabaseUrl,
+        headers,
+        postId,
+        status: "failed",
+        errorMessage: "Vídeo/Reels aceita apenas uma mídia por publicação.",
+      });
+
+      return res.status(400).json({
+        error: "Vídeo/Reels aceita apenas uma mídia por publicação.",
+      });
+    }
+
+    if ((postType === "video" || postType === "reels") && !hasVideo) {
+      await updatePostStatus({
+        supabaseUrl,
+        headers,
+        postId,
+        status: "failed",
+        errorMessage:
+          "O tipo escolhido é vídeo/Reels, mas a mídia enviada não parece ser vídeo.",
+      });
+
+      return res.status(400).json({
+        error:
+          "O tipo escolhido é vídeo/Reels, mas a mídia enviada não parece ser vídeo.",
       });
     }
 
@@ -663,58 +926,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       (account: any) => account.platform === "instagram"
     );
 
-    if (!facebookAccount?.page_id || !facebookAccount?.access_token) {
-      await updatePostStatus({
-        supabaseUrl,
-        headers,
-        postId,
-        status: "failed",
-        errorMessage: "Página do Facebook não conectada corretamente.",
-      });
-
-      return res.status(400).json({
-        error: "Página do Facebook não conectada corretamente.",
-      });
-    }
-
     const selectedPlatforms =
       platforms.length > 0 ? platforms : ["facebook", "instagram"];
 
     const results: Record<string, any> = {};
     const postUrls: Record<string, string | null> = {};
-    const isCarousel = imageUrls.length > 1;
 
     if (selectedPlatforms.includes("facebook")) {
-      console.log(
-        isCarousel
-          ? `Publicando carrossel/múltiplas fotos no Facebook: ${facebookAccount.page_id}`
-          : `Publicando imagem única no Facebook: ${facebookAccount.page_id}`
-      );
+      if (!facebookAccount?.page_id || !facebookAccount?.access_token) {
+        postUrls.facebook = null;
 
-      const facebookResult = isCarousel
-        ? await publishCarouselToFacebook({
-            pageId: facebookAccount.page_id,
-            pageAccessToken: facebookAccount.access_token,
-            imageUrls,
-            caption,
-          })
-        : await publishSinglePhotoToFacebook({
-            pageId: facebookAccount.page_id,
-            pageAccessToken: facebookAccount.access_token,
-            imageUrl: imageUrls[0],
-            caption,
-          });
+        results.facebook = {
+          ok: false,
+          error: "Página do Facebook não conectada corretamente.",
+          url: null,
+        };
+      } else if (isVideoPost) {
+        console.log(`Publicando vídeo no Facebook: ${facebookAccount.page_id}`);
 
-      postUrls.facebook = facebookResult.url;
+        const facebookVideoResult = await publishVideoToFacebook({
+          pageId: facebookAccount.page_id,
+          pageAccessToken: facebookAccount.access_token,
+          videoUrl: mediaUrls[0],
+          caption,
+        });
 
-      results.facebook = {
-        ok: facebookResult.ok,
-        step: facebookResult.step,
-        status: facebookResult.result.status,
-        data: facebookResult.result.data,
-        text: facebookResult.result.text,
-        url: facebookResult.url,
-      };
+        postUrls.facebook = facebookVideoResult.url;
+
+        results.facebook = {
+          ok: facebookVideoResult.ok,
+          step: facebookVideoResult.step,
+          status: facebookVideoResult.result.status,
+          data: facebookVideoResult.result.data,
+          text: facebookVideoResult.result.text,
+          url: facebookVideoResult.url,
+        };
+      } else {
+        console.log(
+          isCarousel
+            ? `Publicando carrossel/múltiplas fotos no Facebook: ${facebookAccount.page_id}`
+            : `Publicando imagem única no Facebook: ${facebookAccount.page_id}`
+        );
+
+        const facebookResult = isCarousel
+          ? await publishCarouselToFacebook({
+              pageId: facebookAccount.page_id,
+              pageAccessToken: facebookAccount.access_token,
+              imageUrls: mediaUrls,
+              caption,
+            })
+          : await publishSinglePhotoToFacebook({
+              pageId: facebookAccount.page_id,
+              pageAccessToken: facebookAccount.access_token,
+              imageUrl: mediaUrls[0],
+              caption,
+            });
+
+        postUrls.facebook = facebookResult.url;
+
+        results.facebook = {
+          ok: facebookResult.ok,
+          step: facebookResult.step,
+          status: facebookResult.result.status,
+          data: facebookResult.result.data,
+          text: facebookResult.result.text,
+          url: facebookResult.url,
+        };
+      }
     }
 
     if (selectedPlatforms.includes("instagram")) {
@@ -722,13 +1000,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         instagramAccount?.instagram_business_account_id ||
         facebookAccount?.instagram_business_account_id;
 
-      if (!instagramBusinessAccountId) {
+      const instagramAccessToken =
+        instagramAccount?.access_token || facebookAccount?.access_token;
+
+      if (!instagramBusinessAccountId || !instagramAccessToken) {
         postUrls.instagram = null;
 
         results.instagram = {
           ok: false,
           error: "Instagram não conectado corretamente.",
           url: null,
+        };
+      } else if (isVideoPost) {
+        console.log(
+          `Publicando Reels no Instagram: ${instagramBusinessAccountId}`
+        );
+
+        const instagramReelsResult = await publishReelsToInstagram({
+          instagramBusinessAccountId,
+          pageAccessToken: instagramAccessToken,
+          videoUrl: mediaUrls[0],
+          caption,
+        });
+
+        postUrls.instagram = instagramReelsResult.permalink;
+
+        results.instagram = {
+          ok: instagramReelsResult.ok,
+          step: instagramReelsResult.step,
+          creationId: instagramReelsResult.creationId,
+          waitResult: instagramReelsResult.waitResult || null,
+          status: instagramReelsResult.result.status,
+          data: instagramReelsResult.result.data,
+          text: instagramReelsResult.result.text,
+          url: instagramReelsResult.permalink,
         };
       } else {
         console.log(
@@ -740,16 +1045,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const instagramResult = isCarousel
           ? await publishCarouselToInstagram({
               instagramBusinessAccountId,
-              pageAccessToken:
-                instagramAccount?.access_token || facebookAccount.access_token,
-              imageUrls,
+              pageAccessToken: instagramAccessToken,
+              imageUrls: mediaUrls,
               caption,
             })
           : await publishSingleImageToInstagram({
               instagramBusinessAccountId,
-              pageAccessToken:
-                instagramAccount?.access_token || facebookAccount.access_token,
-              imageUrl: imageUrls[0],
+              pageAccessToken: instagramAccessToken,
+              imageUrl: mediaUrls[0],
               caption,
             });
 
@@ -804,10 +1107,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       success: true,
-      message: isCarousel
-        ? "Carrossel publicado com sucesso."
-        : "Post publicado com sucesso.",
+      message: isVideoPost
+        ? "Vídeo/Reels publicado com sucesso."
+        : isCarousel
+          ? "Carrossel publicado com sucesso."
+          : "Post publicado com sucesso.",
       isCarousel,
+      isVideoPost,
       results,
       postUrls,
     });
