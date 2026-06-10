@@ -266,7 +266,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       form.getValues("platforms").includes("facebook")
     ) {
       toast.info(
-        "Reels será usado principalmente para Instagram. Para Facebook, use o tipo Vídeo."
+        "Reels será usado principalmente para Instagram. Para Página Facebook, use o tipo Vídeo."
       );
     }
 
@@ -563,7 +563,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     return null;
   };
 
-  const getFacebookShareUrl = (publishResult: any, fallbackUrl: string | null) => {
+  const getFacebookShareUrl = (
+    publishResult: any,
+    fallbackUrl: string | null
+  ) => {
     const facebookUrl = publishResult?.postUrls?.facebook;
     const facebookResultUrl = publishResult?.results?.facebook?.url;
 
@@ -575,7 +578,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
   const formatPlatformName = (platform: string) => {
     if (platform === "instagram") return "Instagram";
-    if (platform === "facebook") return "Página do Facebook";
+    if (platform === "facebook") return "Página Facebook";
     if (platform === "tiktok") return "TikTok";
     return platform;
   };
@@ -624,7 +627,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
 
     if (platforms.includes("instagram") && platforms.includes("facebook")) {
-      return "Publicação feita com sucesso no Instagram e na Página do Facebook!";
+      return "Publicação feita com sucesso no Instagram e na Página Facebook!";
     }
 
     return `Publicação feita com sucesso em ${formatSelectedPlatforms(
@@ -692,7 +695,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
         if (values.type === "reels" && !values.platforms.includes("instagram")) {
           throw new Error(
-            "Para Reels, selecione Instagram. Para Facebook, use o tipo Vídeo."
+            "Para Reels, selecione Instagram. Para Página Facebook, use o tipo Vídeo."
           );
         }
 
@@ -974,7 +977,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             : field.value === "reels"
                               ? "Reels usa vídeo vertical. Recomendado: MP4 1080x1920."
                               : field.value === "video"
-                                ? "Vídeo para Página do Facebook ou Instagram. Recomendado: MP4."
+                                ? "Vídeo para Página Facebook ou Instagram. Recomendado: MP4."
                                 : "Feed usa imagem quadrada ou horizontal. Recomendado: 1080x1080 ou 1200x1200."}
                         </FormDescription>
 
@@ -990,8 +993,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       <FormItem className="space-y-4">
                         <FormLabel>Plataformas</FormLabel>
 
-                        <div className="flex flex-wrap gap-4">
-                          <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md cursor-pointer min-h-[58px]">
                             <Checkbox
                               checked={field.value?.includes("instagram")}
                               onCheckedChange={(checked) =>
@@ -1004,13 +1007,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                 )
                               }
                             />
-                            <span className="font-normal flex items-center gap-2">
-                              <Instagram className="w-4 h-4 text-pink-600" />
+                            <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
+                              <Instagram className="w-4 h-4 text-pink-600 shrink-0" />
                               Instagram
                             </span>
                           </label>
 
-                          <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md cursor-pointer">
+                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md cursor-pointer min-h-[58px]">
                             <Checkbox
                               checked={field.value?.includes("facebook")}
                               onCheckedChange={(checked) =>
@@ -1023,19 +1026,19 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                 )
                               }
                             />
-                            <span className="font-normal flex items-center gap-2">
-                              <Facebook className="w-4 h-4 text-blue-600" />
-                              Página do Facebook
+                            <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
+                              <Facebook className="w-4 h-4 text-blue-600 shrink-0" />
+                              Página Facebook
                             </span>
                           </label>
 
-                          <label className="flex flex-row items-center space-x-3 space-y-0 p-4 border rounded-md opacity-60 cursor-not-allowed">
+                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md opacity-60 cursor-not-allowed min-h-[58px]">
                             <Checkbox
                               checked={field.value?.includes("tiktok")}
                               disabled
                             />
-                            <span className="font-normal flex items-center gap-2">
-                              <SiTiktok className="w-4 h-4" />
+                            <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
+                              <SiTiktok className="w-4 h-4 shrink-0" />
                               TikTok em breve
                             </span>
                           </label>
