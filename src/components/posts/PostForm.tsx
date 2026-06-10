@@ -31,17 +31,20 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarClock,
+  Video,
 } from "lucide-react";
 import { SiTiktok } from "react-icons/si";
 import { supabase } from "@/lib/supabase";
 
 const platformSchema = z.enum(["instagram", "facebook", "tiktok"]);
 
+const postTypeSchema = z.enum(["feed", "story", "reels", "video"]);
+
 const formSchema = z.object({
   title: z.string().min(3, "O título precisa ter pelo menos 3 caracteres"),
   caption: z.string().optional(),
   hashtags: z.string().optional(),
-  type: z.enum(["feed", "story"]),
+  type: postTypeSchema,
   platforms: z
     .array(platformSchema)
     .min(1, "Selecione pelo menos uma plataforma"),
@@ -52,7 +55,9 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 type Platform = z.infer<typeof platformSchema>;
+type PostType = z.infer<typeof postTypeSchema>;
 type SaveAction = "draft" | "schedule" | "publish-now";
+type MediaKind = "image" | "video" | null;
 
 interface PostFormProps {
   initialData?: any;
@@ -61,6 +66,46 @@ interface PostFormProps {
 }
 
 const POST_MEDIA_BUCKET = "post-media";
+
+const isVideoUrl = (url?: string | null) => {
+  if (!url) return false;
+
+  const cleanUrl = url.split("?")[0].toLowerCase();
+
+  return (
+    cleanUrl.endsWith(".mp4") ||
+    cleanUrl.endsWith(".mov") ||
+    cleanUrl.endsWith(".m4v") ||
+    cleanUrl.endsWith(".webm")
+  );
+};
+
+const getFileKind = (file: File): MediaKind => {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+
+  const name = file.name.toLowerCase();
+
+  if (
+    name.endsWith(".mp4") ||
+    name.endsWith(".mov") ||
+    name.endsWith(".m4v") ||
+    name.endsWith(".webm")
+  ) {
+    return "video";
+  }
+
+  if (
+    name.endsWith(".jpg") ||
+    name.endsWith(".jpeg") ||
+    name.endsWith(".png") ||
+    name.endsWith(".webp")
+  ) {
+    return "image";
+  }
+
+  return null;
+};
 
 export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -72,13 +117,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const [draggedMediaIndex, setDraggedMediaIndex] = useState<number | null>(
     null
   );
-
-  const [publishSuccess, setPublishSuccess] = useState<{
-    postUrl: string | null;
-    platforms: string[];
-  } | null>(null);
-
-  const [publishingOverlay, setPublishingOverlay] = useState(false);
 
   const getInitialMediaUrls = () => {
     if (Array.isArray(initialData?.media_urls)) {
@@ -101,6 +139,17 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   };
 
   const initialMediaUrls = getInitialMediaUrls();
+
+  const [mediaKind, setMediaKind] = useState<MediaKind>(
+    initialMediaUrls.some((url: string) => isVideoUrl(url)) ? "video" : "image"
+  );
+
+  const [publishSuccess, setPublishSuccess] = useState<{
+    postUrl: string | null;
+    platforms: string[];
+  } | null>(null);
+
+  const [publishingOverlay, setPublishingOverlay] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -166,7 +215,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const uploadMediaToSupabase = async (file: File) => {
     const companyId = await getCompanyId();
 
-    const fileExtension = file.name.split(".").pop() || "png";
+    const fileExtension = file.name.split(".").pop() || "bin";
     const safeFileName = `${companyId}/${Date.now()}-${crypto.randomUUID()}.${fileExtension}`;
 
     const { error: uploadError } = await supabase.storage
@@ -180,7 +229,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     if (uploadError) {
       throw new Error(
         uploadError.message ||
-          "Erro ao enviar imagem. Verifique se o bucket post-media existe e está público."
+          "Erro ao enviar mídia. Verifique se o bucket post-media existe e está público."
       );
     }
 
@@ -189,10 +238,41 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       .getPublicUrl(safeFileName);
 
     if (!data?.publicUrl) {
-      throw new Error("Não foi possível gerar URL pública da imagem.");
+      throw new Error("Não foi possível gerar URL pública da mídia.");
     }
 
     return data.publicUrl;
+  };
+
+  const handlePostTypeChange = (value: string) => {
+    const nextType = value as PostType;
+
+    const currentMediaUrls = form.getValues("mediaUrls") || [];
+    const hasVideo = mediaKind === "video";
+
+    if ((nextType === "reels" || nextType === "video") && currentMediaUrls.length > 1) {
+      toast.error(
+        "Reels e vídeo aceitam apenas uma mídia. Remova o carrossel antes de mudar o tipo."
+      );
+      return;
+    }
+
+    if (nextType === "reels" && form.getValues("platforms").includes("facebook")) {
+      toast.info(
+        "Reels será usado principalmente para Instagram. Para Facebook, use o tipo Vídeo."
+      );
+    }
+
+    if (hasVideo && nextType === "story") {
+      toast.info(
+        "Vídeo em Story pode depender da sua API de publicação. Para Instagram, prefira Reels."
+      );
+    }
+
+    form.setValue("type", nextType, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
   };
 
   const handleMediaFileChange = async (
@@ -204,27 +284,67 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
     setPublishSuccess(null);
 
-    const invalidFile = files.find((file) => !file.type.startsWith("image/"));
+    const fileKinds = files.map((file) => getFileKind(file));
+    const invalidFile = fileKinds.find((kind) => kind === null);
 
-    if (invalidFile) {
-      toast.error("Selecione apenas arquivos de imagem.");
+    if (invalidFile === null) {
+      toast.error("Selecione apenas imagens ou vídeos nos formatos aceitos.");
       return;
     }
 
-    const maxSizeInMB = 5;
-    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+    const hasImage = fileKinds.includes("image");
+    const hasVideo = fileKinds.includes("video");
 
-    const oversizedFile = files.find((file) => file.size > maxSizeInBytes);
+    if (hasImage && hasVideo) {
+      toast.error("Não misture imagem e vídeo na mesma postagem.");
+      return;
+    }
 
-    if (oversizedFile) {
-      toast.error(`Cada imagem precisa ter no máximo ${maxSizeInMB}MB.`);
+    if (hasVideo && files.length > 1) {
+      toast.error("Postagem em vídeo aceita apenas um arquivo por vez.");
       return;
     }
 
     const currentMediaUrls = form.getValues("mediaUrls") || [];
 
-    if (currentMediaUrls.length + files.length > 10) {
+    if (hasVideo && currentMediaUrls.length > 0) {
+      toast.error(
+        "Para enviar vídeo, remova primeiro as imagens já adicionadas."
+      );
+      return;
+    }
+
+    if (hasImage && mediaKind === "video" && currentMediaUrls.length > 0) {
+      toast.error("Para enviar imagens, remova primeiro o vídeo já adicionado.");
+      return;
+    }
+
+    if (hasImage && currentMediaUrls.length + files.length > 10) {
       toast.error("O carrossel pode ter no máximo 10 imagens.");
+      return;
+    }
+
+    const maxImageSizeInMB = 10;
+    const maxVideoSizeInMB = 200;
+
+    const maxImageSizeInBytes = maxImageSizeInMB * 1024 * 1024;
+    const maxVideoSizeInBytes = maxVideoSizeInMB * 1024 * 1024;
+
+    const oversizedImage = files.find(
+      (file) => getFileKind(file) === "image" && file.size > maxImageSizeInBytes
+    );
+
+    if (oversizedImage) {
+      toast.error(`Cada imagem precisa ter no máximo ${maxImageSizeInMB}MB.`);
+      return;
+    }
+
+    const oversizedVideo = files.find(
+      (file) => getFileKind(file) === "video" && file.size > maxVideoSizeInBytes
+    );
+
+    if (oversizedVideo) {
+      toast.error(`O vídeo precisa ter no máximo ${maxVideoSizeInMB}MB.`);
       return;
     }
 
@@ -232,16 +352,20 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
     try {
       toast.info(
-        files.length > 1
-          ? "Enviando imagens do carrossel..."
-          : "Enviando imagem..."
+        hasVideo
+          ? "Enviando vídeo..."
+          : files.length > 1
+            ? "Enviando imagens do carrossel..."
+            : "Enviando imagem..."
       );
 
       const uploadedUrls = await Promise.all(
         files.map((file) => uploadMediaToSupabase(file))
       );
 
-      const nextMediaUrls = [...currentMediaUrls, ...uploadedUrls];
+      const nextMediaUrls = hasVideo
+        ? uploadedUrls
+        : [...currentMediaUrls, ...uploadedUrls];
 
       form.setValue("mediaUrls", nextMediaUrls, {
         shouldDirty: true,
@@ -253,14 +377,29 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         shouldValidate: true,
       });
 
+      setMediaKind(hasVideo ? "video" : "image");
+
+      if (hasVideo) {
+        const currentType = form.getValues("type");
+
+        if (currentType === "feed" || currentType === "story") {
+          form.setValue("type", "reels", {
+            shouldDirty: true,
+            shouldValidate: true,
+          });
+        }
+      }
+
       toast.success(
-        files.length > 1
-          ? "Imagens adicionadas ao carrossel."
-          : "Imagem enviada e adicionada ao post."
+        hasVideo
+          ? "Vídeo enviado e adicionado ao post."
+          : files.length > 1
+            ? "Imagens adicionadas ao carrossel."
+            : "Imagem enviada e adicionada ao post."
       );
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Não foi possível enviar a imagem.");
+      toast.error(error?.message || "Não foi possível enviar a mídia.");
     } finally {
       setIsUploadingMedia(false);
 
@@ -286,10 +425,17 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       shouldValidate: true,
     });
 
-    toast.success("Imagem removida.");
+    if (nextMediaUrls.length === 0) {
+      setMediaKind(null);
+    } else {
+      setMediaKind(nextMediaUrls.some((url) => isVideoUrl(url)) ? "video" : "image");
+    }
+
+    toast.success("Mídia removida.");
   };
 
   const reorderMediaUrls = (fromIndex: number, toIndex: number) => {
+    if (mediaKind === "video") return;
     if (fromIndex === toIndex) return;
 
     const currentMediaUrls = form.getValues("mediaUrls") || [];
@@ -435,9 +581,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
   const getPublishingMessage = (
     platforms: string[],
-    isCarouselPost: boolean
+    isCarouselPost: boolean,
+    isVideoPost: boolean
   ) => {
     const platformText = formatSelectedPlatforms(platforms);
+
+    if (isVideoPost) {
+      return `Publicando vídeo no ${platformText}...`;
+    }
 
     if (isCarouselPost) {
       return `Publicando carrossel no ${platformText}...`;
@@ -480,6 +631,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       const isPublishingOrScheduling =
         action === "publish-now" || action === "schedule";
 
+      const hasVideo = mediaKind === "video";
+      const hasCarousel = mediaUrls.length > 1;
+
       if (isPublishingOrScheduling) {
         setPublishSuccess(null);
 
@@ -492,8 +646,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         if (mediaUrls.length === 0) {
           throw new Error(
             action === "schedule"
-              ? "Adicione pelo menos uma imagem antes de agendar."
-              : "Adicione pelo menos uma imagem antes de publicar."
+              ? "Adicione pelo menos uma mídia antes de agendar."
+              : "Adicione pelo menos uma mídia antes de publicar."
           );
         }
 
@@ -503,8 +657,34 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
         if (invalidMediaUrl) {
           throw new Error(
-            "Todas as imagens precisam ser URLs públicas https. Escolha as imagens novamente para enviar ao Supabase."
+            "Todas as mídias precisam ser URLs públicas https. Escolha os arquivos novamente para enviar ao Supabase."
           );
+        }
+
+        if (hasVideo && hasCarousel) {
+          throw new Error("Vídeo não pode ser publicado como carrossel.");
+        }
+
+        if (hasVideo && values.type === "feed") {
+          throw new Error(
+            "Para publicar vídeo, escolha o tipo Reels ou Vídeo."
+          );
+        }
+
+        if (values.type === "reels" && !values.platforms.includes("instagram")) {
+          throw new Error(
+            "Para Reels, selecione Instagram. Para Facebook, use o tipo Vídeo."
+          );
+        }
+
+        if (values.type === "reels" && !hasVideo) {
+          toast.info(
+            "Você escolheu Reels, mas a mídia enviada parece ser imagem. Para Reels, envie um vídeo."
+          );
+        }
+
+        if (values.type === "video" && !hasVideo) {
+          throw new Error("Para o tipo Vídeo, envie um arquivo de vídeo.");
         }
       }
 
@@ -550,7 +730,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         setPublishingOverlay(true);
 
         const loadingToast = toast.loading(
-          getPublishingMessage(values.platforms, mediaUrls.length > 1)
+          getPublishingMessage(values.platforms, hasCarousel, hasVideo)
         );
 
         const publishResult = await publishPostNow(savedPostId);
@@ -614,8 +794,12 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   const mediaPreview = mediaUrls[0] || form.watch("mediaUrl");
   const postType = form.watch("type");
   const selectedPlatforms = form.watch("platforms") || [];
+
   const isStory = postType === "story";
-  const isCarousel = mediaUrls.length > 1;
+  const isReels = postType === "reels";
+  const isVideoPost = postType === "video" || mediaKind === "video";
+  const isCarousel = mediaKind !== "video" && mediaUrls.length > 1;
+  const hasMedia = mediaUrls.length > 0;
 
   return (
     <div className="space-y-6">
@@ -628,7 +812,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
               </div>
 
               <h2 className="text-3xl font-bold text-slate-900">
-                {getPublishingMessage(selectedPlatforms, isCarousel)}
+                {getPublishingMessage(selectedPlatforms, isCarousel, isVideoPost)}
               </h2>
 
               <p className="text-lg text-slate-600 mt-3">
@@ -725,19 +909,25 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         <FormControl>
                           <Tabs
                             value={field.value}
-                            onValueChange={field.onChange}
+                            onValueChange={handlePostTypeChange}
                           >
-                            <TabsList className="grid w-full grid-cols-2">
+                            <TabsList className="grid w-full grid-cols-4">
                               <TabsTrigger value="feed">Feed</TabsTrigger>
                               <TabsTrigger value="story">Story</TabsTrigger>
+                              <TabsTrigger value="reels">Reels</TabsTrigger>
+                              <TabsTrigger value="video">Vídeo</TabsTrigger>
                             </TabsList>
                           </Tabs>
                         </FormControl>
 
                         <FormDescription>
                           {field.value === "story"
-                            ? "Stories usam formato vertical. Recomendado: imagem 1080x1920."
-                            : "Feed usa formato quadrado ou horizontal. Recomendado: imagem 1080x1080 ou 1200x1200."}
+                            ? "Stories usam formato vertical. Recomendado: 1080x1920."
+                            : field.value === "reels"
+                              ? "Reels usa vídeo vertical. Recomendado: MP4 1080x1920."
+                              : field.value === "video"
+                                ? "Vídeo para Facebook ou Instagram. Recomendado: MP4."
+                                : "Feed usa imagem quadrada ou horizontal. Recomendado: 1080x1080 ou 1200x1200."}
                         </FormDescription>
 
                         <FormMessage />
@@ -834,10 +1024,16 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     render={() => (
                       <FormItem>
                         <FormLabel>
-                          Imagens da Postagem{" "}
+                          Mídia da Postagem{" "}
                           {isCarousel && (
                             <span className="text-xs text-muted-foreground">
                               ({mediaUrls.length} imagens no carrossel)
+                            </span>
+                          )}
+                          {mediaKind === "video" && (
+                            <span className="text-xs text-muted-foreground">
+                              {" "}
+                              (vídeo selecionado)
                             </span>
                           )}
                         </FormLabel>
@@ -846,8 +1042,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                           <input
                             ref={fileInputRef}
                             type="file"
-                            accept="image/*"
-                            multiple
+                            accept="image/*,video/mp4,video/quicktime,video/x-m4v,video/webm"
+                            multiple={mediaKind !== "video"}
                             className="hidden"
                             onChange={handleMediaFileChange}
                           />
@@ -865,109 +1061,144 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             )}
                             {isUploadingMedia
                               ? "Enviando..."
-                              : "Escolher Imagens"}
+                              : "Escolher Mídia"}
                           </Button>
                         </div>
 
                         <FormDescription>
-                          Você pode selecionar uma ou várias imagens. Com mais de
-                          uma imagem, o post será preparado como carrossel.
-                          Máximo: 10 imagens.
+                          Você pode selecionar imagens ou vídeo. Imagens podem
+                          formar carrossel com até 10 itens. Vídeo/Reels aceita
+                          apenas 1 arquivo por postagem.
                         </FormDescription>
 
                         {mediaUrls.length > 0 && (
                           <div className="space-y-3 mt-4">
-                            <p className="text-xs text-muted-foreground">
-                              Arraste as imagens para mudar a ordem. A primeira
-                              imagem será a capa da postagem.
-                            </p>
+                            {mediaKind === "image" && mediaUrls.length > 1 && (
+                              <p className="text-xs text-muted-foreground">
+                                Arraste as imagens para mudar a ordem. A primeira
+                                imagem será a capa da postagem.
+                              </p>
+                            )}
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              {mediaUrls.map((url, index) => (
-                                <div
-                                  key={`${url}-${index}`}
-                                  draggable={!isPending && !isUploadingMedia}
-                                  onDragStart={() =>
-                                    setDraggedMediaIndex(index)
-                                  }
-                                  onDragOver={(event) =>
-                                    event.preventDefault()
-                                  }
-                                  onDrop={() => {
-                                    if (draggedMediaIndex === null) return;
-                                    reorderMediaUrls(draggedMediaIndex, index);
-                                    setDraggedMediaIndex(null);
-                                  }}
-                                  onDragEnd={() => setDraggedMediaIndex(null)}
-                                  className={`relative border rounded-md overflow-hidden bg-muted cursor-move transition ${
-                                    draggedMediaIndex === index
-                                      ? "opacity-50 ring-2 ring-primary"
-                                      : "hover:ring-2 hover:ring-primary/50"
-                                  }`}
-                                >
-                                  <img
-                                    src={url}
-                                    alt={`Imagem ${index + 1}`}
-                                    className="w-full aspect-square object-cover"
-                                  />
+                              {mediaUrls.map((url, index) => {
+                                const itemIsVideo = isVideoUrl(url) || mediaKind === "video";
 
-                                  <div className="absolute top-2 left-2 h-7 px-2 rounded-md bg-black/60 text-white flex items-center gap-1 text-xs">
-                                    <GripVertical className="w-4 h-4" />
-                                    Arrastar
-                                  </div>
-
-                                  <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="destructive"
-                                    className="absolute top-2 right-2 h-7 w-7"
-                                    onClick={() => removeMediaUrl(url)}
-                                    disabled={isPending || isUploadingMedia}
+                                return (
+                                  <div
+                                    key={`${url}-${index}`}
+                                    draggable={
+                                      !itemIsVideo &&
+                                      !isPending &&
+                                      !isUploadingMedia
+                                    }
+                                    onDragStart={() =>
+                                      !itemIsVideo &&
+                                      setDraggedMediaIndex(index)
+                                    }
+                                    onDragOver={(event) =>
+                                      event.preventDefault()
+                                    }
+                                    onDrop={() => {
+                                      if (itemIsVideo) return;
+                                      if (draggedMediaIndex === null) return;
+                                      reorderMediaUrls(draggedMediaIndex, index);
+                                      setDraggedMediaIndex(null);
+                                    }}
+                                    onDragEnd={() => setDraggedMediaIndex(null)}
+                                    className={`relative border rounded-md overflow-hidden bg-muted transition ${
+                                      itemIsVideo
+                                        ? ""
+                                        : "cursor-move hover:ring-2 hover:ring-primary/50"
+                                    } ${
+                                      draggedMediaIndex === index
+                                        ? "opacity-50 ring-2 ring-primary"
+                                        : ""
+                                    }`}
                                   >
-                                    <X className="w-4 h-4" />
-                                  </Button>
+                                    {itemIsVideo ? (
+                                      <video
+                                        src={url}
+                                        className="w-full aspect-square object-cover"
+                                        controls
+                                      />
+                                    ) : (
+                                      <img
+                                        src={url}
+                                        alt={`Imagem ${index + 1}`}
+                                        className="w-full aspect-square object-cover"
+                                      />
+                                    )}
 
-                                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-2 py-2 space-y-2">
-                                    <div className="font-medium">
-                                      {index === 0
-                                        ? "Capa / Imagem 1"
-                                        : `Imagem ${index + 1}`}
-                                    </div>
+                                    {!itemIsVideo && (
+                                      <div className="absolute top-2 left-2 h-7 px-2 rounded-md bg-black/60 text-white flex items-center gap-1 text-xs">
+                                        <GripVertical className="w-4 h-4" />
+                                        Arrastar
+                                      </div>
+                                    )}
 
-                                    <div className="flex items-center gap-2">
-                                      <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="secondary"
-                                        className="h-7 w-7"
-                                        onClick={() => moveMediaLeft(index)}
-                                        disabled={
-                                          index === 0 ||
-                                          isPending ||
-                                          isUploadingMedia
-                                        }
-                                      >
-                                        <ArrowLeft className="w-4 h-4" />
-                                      </Button>
+                                    {itemIsVideo && (
+                                      <div className="absolute top-2 left-2 h-7 px-2 rounded-md bg-black/60 text-white flex items-center gap-1 text-xs">
+                                        <Video className="w-4 h-4" />
+                                        Vídeo
+                                      </div>
+                                    )}
 
-                                      <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="secondary"
-                                        className="h-7 w-7"
-                                        onClick={() => moveMediaRight(index)}
-                                        disabled={
-                                          index === mediaUrls.length - 1 ||
-                                          isPending ||
-                                          isUploadingMedia
-                                        }
-                                      >
-                                        <ArrowRight className="w-4 h-4" />
-                                      </Button>
-                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="destructive"
+                                      className="absolute top-2 right-2 h-7 w-7"
+                                      onClick={() => removeMediaUrl(url)}
+                                      disabled={isPending || isUploadingMedia}
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </Button>
+
+                                    {!itemIsVideo && (
+                                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-2 py-2 space-y-2">
+                                        <div className="font-medium">
+                                          {index === 0
+                                            ? "Capa / Imagem 1"
+                                            : `Imagem ${index + 1}`}
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            type="button"
+                                            size="icon"
+                                            variant="secondary"
+                                            className="h-7 w-7"
+                                            onClick={() => moveMediaLeft(index)}
+                                            disabled={
+                                              index === 0 ||
+                                              isPending ||
+                                              isUploadingMedia
+                                            }
+                                          >
+                                            <ArrowLeft className="w-4 h-4" />
+                                          </Button>
+
+                                          <Button
+                                            type="button"
+                                            size="icon"
+                                            variant="secondary"
+                                            className="h-7 w-7"
+                                            onClick={() => moveMediaRight(index)}
+                                            disabled={
+                                              index === mediaUrls.length - 1 ||
+                                              isPending ||
+                                              isUploadingMedia
+                                            }
+                                          >
+                                            <ArrowRight className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -1045,7 +1276,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
                         <FormDescription>
                           Escolha a data e hora e clique em Agendar Postagem.
-                          Assim você não perde a imagem, título, legenda e
+                          Assim você não perde a mídia, título, legenda e
                           hashtags já preenchidos.
                         </FormDescription>
 
@@ -1107,11 +1338,15 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                 </h3>
 
                 <p className="text-xs text-muted-foreground mb-3">
-                  {isStory
-                    ? "Formato Story vertical. Recomendado: imagem 1080x1920."
-                    : isCarousel
-                      ? `Carrossel com ${mediaUrls.length} imagens.`
-                      : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
+                  {postType === "story"
+                    ? "Formato Story vertical. Recomendado: 1080x1920."
+                    : postType === "reels"
+                      ? "Formato Reels vertical. Recomendado: vídeo 1080x1920."
+                      : postType === "video"
+                        ? "Preview de vídeo."
+                        : isCarousel
+                          ? `Carrossel com ${mediaUrls.length} imagens.`
+                          : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
                 </p>
 
                 <div className="border rounded-md overflow-hidden bg-background">
@@ -1125,33 +1360,56 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   {mediaPreview ? (
                     <div
                       className={
-                        isStory
+                        isStory || isReels
                           ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex items-center justify-center overflow-hidden p-2"
                           : "aspect-square bg-muted flex items-center justify-center overflow-hidden p-2"
                       }
                     >
-                      <img
-                        src={mediaPreview}
-                        className="max-w-full max-h-full object-contain bg-white rounded-md"
-                        alt="Preview da mídia"
-                        onError={(event) => {
-                          event.currentTarget.style.display = "none";
-                          toast.error(
-                            "Não foi possível carregar essa imagem. Escolha novamente uma imagem do computador."
-                          );
-                        }}
-                      />
+                      {mediaKind === "video" || isVideoUrl(mediaPreview) ? (
+                        <video
+                          src={mediaPreview}
+                          className="max-w-full max-h-full object-contain bg-black rounded-md"
+                          controls
+                          onError={() => {
+                            toast.error(
+                              "Não foi possível carregar esse vídeo. Escolha novamente um vídeo do computador."
+                            );
+                          }}
+                        />
+                      ) : (
+                        <img
+                          src={mediaPreview}
+                          className="max-w-full max-h-full object-contain bg-white rounded-md"
+                          alt="Preview da mídia"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                            toast.error(
+                              "Não foi possível carregar essa imagem. Escolha novamente uma imagem do computador."
+                            );
+                          }}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div
                       className={
-                        isStory
+                        isStory || isReels
                           ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
                           : "aspect-square bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
                       }
                     >
-                      <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
-                      {isStory ? "Preview do Story" : "Preview da Mídia"}
+                      {postType === "reels" || postType === "video" ? (
+                        <Video className="w-8 h-8 mb-2 opacity-50" />
+                      ) : (
+                        <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                      )}
+                      {postType === "story"
+                        ? "Preview do Story"
+                        : postType === "reels"
+                          ? "Preview do Reels"
+                          : postType === "video"
+                            ? "Preview do Vídeo"
+                            : "Preview da Mídia"}
                     </div>
                   )}
 
@@ -1182,6 +1440,19 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     {form.watch("hashtags") && (
                       <p className="text-blue-600 mt-1 line-clamp-2">
                         {form.watch("hashtags")}
+                      </p>
+                    )}
+
+                    {hasMedia && (
+                      <p className="text-xs text-muted-foreground pt-1">
+                        Tipo:{" "}
+                        {mediaKind === "video"
+                          ? postType === "reels"
+                            ? "Reels / Vídeo"
+                            : "Vídeo"
+                          : isCarousel
+                            ? "Carrossel de imagens"
+                            : "Imagem"}
                       </p>
                     )}
                   </div>
