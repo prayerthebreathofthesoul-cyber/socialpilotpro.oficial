@@ -10,6 +10,28 @@ type HttpResult = {
   text: string;
 };
 
+function setCorsHeaders(req: VercelRequest, res: VercelResponse) {
+  const origin = req.headers.origin;
+
+  const allowedOrigins = [
+    "https://socialpilotpro.com.br",
+    "https://www.socialpilotpro.com.br",
+    "https://socialpilotproficial.vercel.app",
+  ];
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
+  res.setHeader("Access-Control-Max-Age", "86400");
+}
+
 function requestJson(
   urlString: string,
   options: {
@@ -268,6 +290,12 @@ function choosePrivacyLevel(creatorInfo: any) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  setCorsHeaders(req, res);
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   try {
     if (req.method !== "POST") {
       return res.status(405).json({
@@ -369,6 +397,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       postId,
       privacyLevel,
       hasVideoUrl: Boolean(mediaUrl),
+      mediaUrl,
     });
 
     const publishResult = await initializeDirectVideoPost({
@@ -394,7 +423,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       return res.status(400).json({
-        error: "Erro ao iniciar publicação no TikTok.",
+        error:
+          publishResult.data?.error?.message ||
+          publishResult.data?.error?.code ||
+          "Erro ao iniciar publicação no TikTok.",
         details: publishResult.data || publishResult.text,
       });
     }
