@@ -132,24 +132,19 @@ function downloadVideoBuffer(
           }
 
           const nextUrl = new URL(location, urlString).toString();
-
           resolve(downloadVideoBuffer(nextUrl, redirects + 1));
           return;
         }
 
         if (status < 200 || status >= 300) {
-          reject(
-            new Error(`Erro ao baixar vídeo. Status ${status}.`)
-          );
+          reject(new Error(`Erro ao baixar vídeo. Status ${status}.`));
           return;
         }
 
         const contentLength = Number(response.headers["content-length"] || 0);
 
         if (contentLength > MAX_VIDEO_BYTES) {
-          reject(
-            new Error("Vídeo maior que 50MB. Envie um vídeo menor.")
-          );
+          reject(new Error("Vídeo maior que 50MB. Envie um vídeo menor."));
           return;
         }
 
@@ -165,9 +160,7 @@ function downloadVideoBuffer(
 
           if (total > MAX_VIDEO_BYTES) {
             req.destroy();
-            reject(
-              new Error("Vídeo maior que 50MB. Envie um vídeo menor.")
-            );
+            reject(new Error("Vídeo maior que 50MB. Envie um vídeo menor."));
             return;
           }
 
@@ -432,15 +425,51 @@ async function initializeDirectVideoFileUpload(params: {
 function choosePrivacyLevel(creatorInfo: any) {
   const options = creatorInfo?.data?.privacy_level_options;
 
-  if (Array.isArray(options) && options.includes("SELF_ONLY")) {
-    return "SELF_ONLY";
-  }
+  console.log("Opções de privacidade retornadas pelo TikTok:", {
+    privacyLevelOptions: options,
+  });
 
-  if (Array.isArray(options) && options.length > 0) {
-    return options[0];
-  }
-
+  // Em Sandbox / app não auditado, precisa ser privado.
+  // Mesmo se o TikTok não listar SELF_ONLY, forçamos SELF_ONLY para evitar
+  // o erro unaudited_client_can_only_post_to_private_accounts.
   return "SELF_ONLY";
+}
+
+function getTikTokErrorCode(data: any) {
+  return data?.error?.code || data?.data?.error_code || null;
+}
+
+function getTikTokErrorMessage(data: any) {
+  return data?.error?.message || data?.message || null;
+}
+
+function getFriendlyTikTokError(data: any, fallback: string) {
+  const code = getTikTokErrorCode(data);
+  const message = getTikTokErrorMessage(data);
+
+  if (code === "unaudited_client_can_only_post_to_private_accounts") {
+    return (
+      "O TikTok bloqueou porque o app ainda está em Sandbox/não auditado. " +
+      "Para testar Direct Post, use privacidade SELF_ONLY e, se continuar, " +
+      "deixe a conta TikTok de teste como privada ou use o fluxo de rascunho/upload."
+    );
+  }
+
+  if (code === "scope_not_authorized") {
+    return (
+      "O TikTok recusou por permissão não autorizada. Reconecte a conta e confira " +
+      "se os escopos video.publish/video.upload estão habilitados no TikTok Developers."
+    );
+  }
+
+  if (code === "url_ownership_unverified") {
+    return (
+      "O TikTok recusou a URL do vídeo por domínio não verificado. " +
+      "A rota já usa FILE_UPLOAD, então confirme se o deploy novo está ativo."
+    );
+  }
+
+  return message || code || fallback;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -551,15 +580,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         creatorInfoResult.text
       );
 
+      const friendlyError = getFriendlyTikTokError(
+        creatorInfoResult.data,
+        "TikTok recusou creator_info. Verifique as permissões e reconecte a conta."
+      );
+
       await updatePostStatus(supabaseUrl, serviceRoleKey, postId, {
         status: "failed",
-        error_message:
-          "TikTok recusou creator_info. Verifique se video.publish está aprovado e reconecte a conta.",
+        error_message: friendlyError,
       });
 
       return res.status(400).json({
-        error:
-          "TikTok recusou a consulta creator_info. Verifique os escopos video.publish/video.upload e reconecte a conta.",
+        error: friendlyError,
         details: creatorInfoResult.data || creatorInfoResult.text,
       });
     }
@@ -590,19 +622,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         initResult.text
       );
 
+      const friendlyError = getFriendlyTikTokError(
+        initResult.data,
+        "Erro ao inicializar envio do vídeo no TikTok."
+      );
+
       await updatePostStatus(supabaseUrl, serviceRoleKey, postId, {
         status: "failed",
-        error_message:
-          initResult.data?.error?.message ||
-          initResult.data?.error?.code ||
-          "Erro ao inicializar envio do vídeo no TikTok.",
+        error_message: friendlyError,
       });
 
       return res.status(400).json({
-        error:
-          initResult.data?.error?.message ||
-          initResult.data?.error?.code ||
-          "Erro ao inicializar envio do vídeo no TikTok.",
+        error: friendlyError,
         details: initResult.data || initResult.text,
       });
     }
@@ -625,19 +656,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         uploadResult.text
       );
 
+      const friendlyError = getFriendlyTikTokError(
+        uploadResult.data,
+        "Erro ao enviar vídeo para o TikTok."
+      );
+
       await updatePostStatus(supabaseUrl, serviceRoleKey, postId, {
         status: "failed",
-        error_message:
-          uploadResult.data?.error?.message ||
-          uploadResult.data?.error?.code ||
-          "Erro ao enviar vídeo para o TikTok.",
+        error_message: friendlyError,
       });
 
       return res.status(400).json({
-        error:
-          uploadResult.data?.error?.message ||
-          uploadResult.data?.error?.code ||
-          "Erro ao enviar vídeo para o TikTok.",
+        error: friendlyError,
         details: uploadResult.data || uploadResult.text,
       });
     }
@@ -658,7 +688,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       platform: "tiktok",
       publishId,
       message:
-        "Vídeo enviado para o TikTok. O processamento pode levar alguns instantes.",
+        "Vídeo enviado para o TikTok com privacidade SELF_ONLY. O processamento pode levar alguns instantes.",
       result: initResult.data,
     });
   } catch (error: any) {
