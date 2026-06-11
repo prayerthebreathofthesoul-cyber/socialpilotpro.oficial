@@ -327,7 +327,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
 
     const maxImageSizeInMB = 10;
-    const maxVideoSizeInMB = 200;
+    const maxVideoSizeInMB = 50;
 
     const maxImageSizeInBytes = maxImageSizeInMB * 1024 * 1024;
     const maxVideoSizeInBytes = maxVideoSizeInMB * 1024 * 1024;
@@ -346,7 +346,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     );
 
     if (oversizedVideo) {
-      toast.error(`O vídeo precisa ter no máximo ${maxVideoSizeInMB}MB.`);
+      toast.error(
+        `O vídeo precisa ter no máximo ${maxVideoSizeInMB}MB. Comprima o vídeo e tente novamente.`
+      );
       return;
     }
 
@@ -1124,7 +1126,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         </div>
 
                         <p className="text-xs text-muted-foreground">
-                          Para TikTok, envie um vídeo e escolha Reels ou Vídeo.
+                          Para TikTok, envie um vídeo de até 50MB e escolha
+                          Reels ou Vídeo.
                         </p>
 
                         <FormMessage />
@@ -1202,7 +1205,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         <FormDescription>
                           Você pode selecionar imagens ou vídeo. Imagens podem
                           formar carrossel com até 10 itens. Vídeo/Reels aceita
-                          apenas 1 arquivo por postagem.
+                          apenas 1 arquivo por postagem. Vídeo: máximo 50MB.
                         </FormDescription>
 
                         {mediaUrls.length > 0 && (
