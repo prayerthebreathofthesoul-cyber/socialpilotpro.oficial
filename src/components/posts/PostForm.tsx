@@ -515,45 +515,112 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     };
   };
 
-  const publishPostNow = async (postId: string | number) => {
-    const response = await fetch("/api/meta/publish", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        postId,
-      }),
-    });
+  const publishPostNow = async (
+    postId: string | number,
+    platforms: Platform[]
+  ) => {
+    const shouldPublishMeta =
+      platforms.includes("instagram") || platforms.includes("facebook");
 
-    const result = await response.json().catch(() => null);
+    const shouldPublishTiktok = platforms.includes("tiktok");
 
-    if (!response.ok) {
-      console.error("Erro ao publicar na Meta:", result);
+    const results: any = {
+      success: true,
+      results: {},
+      postUrls: {},
+    };
 
-      const message =
-        result?.error ||
-        result?.details ||
-        "Erro ao publicar nas redes sociais.";
+    if (shouldPublishMeta) {
+      const metaResponse = await fetch("/api/meta/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          postId,
+        }),
+      });
 
-      throw new Error(message);
+      const metaResult = await metaResponse.json().catch(() => null);
+
+      if (!metaResponse.ok) {
+        console.error("Erro ao publicar na Meta:", metaResult);
+
+        const message =
+          metaResult?.error ||
+          metaResult?.details ||
+          "Erro ao publicar no Instagram/Página Facebook.";
+
+        throw new Error(message);
+      }
+
+      results.results.meta = metaResult;
+
+      if (metaResult?.postUrls) {
+        results.postUrls = {
+          ...results.postUrls,
+          ...metaResult.postUrls,
+        };
+      }
+
+      if (metaResult?.results) {
+        results.results = {
+          ...results.results,
+          ...metaResult.results,
+        };
+      }
     }
 
-    return result;
+    if (shouldPublishTiktok) {
+      const tiktokResponse = await fetch("/api/tiktok/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          postId,
+        }),
+      });
+
+      const tiktokResult = await tiktokResponse.json().catch(() => null);
+
+      if (!tiktokResponse.ok) {
+        console.error("Erro ao publicar no TikTok:", tiktokResult);
+
+        const message =
+          tiktokResult?.error ||
+          tiktokResult?.details ||
+          "Erro ao publicar no TikTok.";
+
+        throw new Error(message);
+      }
+
+      results.results.tiktok = tiktokResult;
+
+      if (tiktokResult?.postUrl) {
+        results.postUrls.tiktok = tiktokResult.postUrl;
+      }
+    }
+
+    return results;
   };
 
   const getPublishedPostUrl = (publishResult: any) => {
     const instagramUrl = publishResult?.postUrls?.instagram;
     const facebookUrl = publishResult?.postUrls?.facebook;
+    const tiktokUrl = publishResult?.postUrls?.tiktok;
 
     if (instagramUrl) return instagramUrl;
     if (facebookUrl) return facebookUrl;
+    if (tiktokUrl) return tiktokUrl;
 
     const instagramResultUrl = publishResult?.results?.instagram?.url;
     const facebookResultUrl = publishResult?.results?.facebook?.url;
+    const tiktokResultUrl = publishResult?.results?.tiktok?.url;
 
     if (instagramResultUrl) return instagramResultUrl;
     if (facebookResultUrl) return facebookResultUrl;
+    if (tiktokResultUrl) return tiktokResultUrl;
 
     return null;
   };
@@ -622,7 +689,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     }
 
     if (platforms.includes("instagram") && platforms.includes("facebook")) {
-      return "Publicação feita com sucesso no Instagram e na Página Facebook!";
+      return platforms.includes("tiktok")
+        ? "Publicação feita com sucesso no Instagram, Página Facebook e TikTok!"
+        : "Publicação feita com sucesso no Instagram e na Página Facebook!";
     }
 
     return `Publicação feita com sucesso em ${formatSelectedPlatforms(
@@ -650,10 +719,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
       const hasVideo = mediaKind === "video";
       const hasCarousel = mediaUrls.length > 1;
-      const selectedOnlyTiktok =
-        values.platforms.length === 1 && values.platforms.includes("tiktok");
-      const selectedTiktokWithOthers =
-        values.platforms.includes("tiktok") && values.platforms.length > 1;
 
       if (isPublishingOrScheduling) {
         setPublishSuccess(null);
@@ -707,18 +772,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
             "TikTok não usa Story nessa integração. Para TikTok, escolha Reels ou Vídeo."
           );
         }
-
-        if (action === "publish-now" && selectedOnlyTiktok) {
-          throw new Error(
-            "TikTok já está conectado e selecionável, mas a publicação direta ainda depende da rota /api/tiktok/publish. O próximo passo é criar essa rota."
-          );
-        }
-
-        if (action === "publish-now" && selectedTiktokWithOthers) {
-          toast.info(
-            "TikTok está selecionado, mas por enquanto a publicação direta será enviada apenas para Instagram/Página Facebook. O próximo passo é criar /api/tiktok/publish."
-          );
-        }
       }
 
       if (action === "schedule" && !values.scheduledAt) {
@@ -766,7 +819,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           getPublishingMessage(values.platforms, hasCarousel, hasVideo)
         );
 
-        const publishResult = await publishPostNow(savedPostId);
+        const publishResult = await publishPostNow(
+          savedPostId,
+          values.platforms
+        );
 
         toast.dismiss(loadingToast);
         setPublishingOverlay(false);
@@ -777,38 +833,31 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         setPublishSuccess({
           postUrl,
           facebookShareUrl,
-          platforms: values.platforms.filter((platform) => platform !== "tiktok"),
+          platforms: values.platforms,
         });
 
-        toast.success(
-          getPublishedSuccessTitle(
-            values.platforms.filter((platform) => platform !== "tiktok")
-          ),
-          {
-            description: postUrl
-              ? `${getPublishedSuccessDescription(
-                  values.platforms.filter((platform) => platform !== "tiktok")
-                )} Clique em Ver post para abrir a publicação.`
-              : getPublishedSuccessDescription(
-                  values.platforms.filter((platform) => platform !== "tiktok")
-                ),
-            duration: 10000,
-            action: postUrl
-              ? {
-                  label: "Ver post",
-                  onClick: () => {
-                    window.open(postUrl, "_blank", "noopener,noreferrer");
-                  },
-                }
-              : undefined,
-          }
-        );
+        toast.success(getPublishedSuccessTitle(values.platforms), {
+          description: postUrl
+            ? `${getPublishedSuccessDescription(
+                values.platforms
+              )} Clique em Ver post para abrir a publicação.`
+            : getPublishedSuccessDescription(values.platforms),
+          duration: 10000,
+          action: postUrl
+            ? {
+                label: "Ver post",
+                onClick: () => {
+                  window.open(postUrl, "_blank", "noopener,noreferrer");
+                },
+              }
+            : undefined,
+        });
 
         return;
       } else if (action === "schedule") {
         toast.success("Postagem agendada com sucesso.", {
           description: values.platforms.includes("tiktok")
-            ? "Sua postagem foi salva com TikTok selecionado. Para publicar automaticamente no TikTok, ainda precisamos criar /api/tiktok/publish e ajustar o cron."
+            ? "Sua postagem foi salva com TikTok selecionado. O cron também precisa chamar /api/tiktok/publish para publicar automaticamente no horário agendado."
             : "Sua postagem foi salva no calendário para a data e hora escolhidas.",
           duration: 7000,
         });
@@ -1075,9 +1124,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         </div>
 
                         <p className="text-xs text-muted-foreground">
-                          TikTok já pode ser selecionado. A publicação direta
-                          ainda precisa da rota /api/tiktok/publish para enviar
-                          automaticamente.
+                          Para TikTok, envie um vídeo e escolha Reels ou Vídeo.
                         </p>
 
                         <FormMessage />
