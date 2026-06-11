@@ -199,11 +199,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
     platform: Platform,
     currentValue: Platform[] = []
   ) => {
-    if (platform === "tiktok") {
-      toast.info("TikTok ainda está em desenvolvimento.");
-      return currentValue;
-    }
-
     if (checked === true) {
       return currentValue.includes(platform)
         ? currentValue
@@ -266,13 +261,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       form.getValues("platforms").includes("facebook")
     ) {
       toast.info(
-        "Reels será usado principalmente para Instagram. Para Página Facebook, use o tipo Vídeo."
+        "Reels será usado principalmente para Instagram e TikTok. Para Página Facebook, use o tipo Vídeo."
       );
     }
 
     if (hasVideo && nextType === "story") {
       toast.info(
-        "Vídeo em Story pode depender da sua API de publicação. Para Instagram, prefira Reels."
+        "Vídeo em Story pode depender da sua API de publicação. Para Instagram e TikTok, prefira Reels ou Vídeo."
       );
     }
 
@@ -655,15 +650,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
       const hasVideo = mediaKind === "video";
       const hasCarousel = mediaUrls.length > 1;
+      const selectedOnlyTiktok =
+        values.platforms.length === 1 && values.platforms.includes("tiktok");
+      const selectedTiktokWithOthers =
+        values.platforms.includes("tiktok") && values.platforms.length > 1;
 
       if (isPublishingOrScheduling) {
         setPublishSuccess(null);
-
-        if (values.platforms.includes("tiktok")) {
-          throw new Error(
-            "TikTok ainda não está disponível para publicação automática."
-          );
-        }
 
         if (mediaUrls.length === 0) {
           throw new Error(
@@ -693,12 +686,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           );
         }
 
-        if (values.type === "reels" && !values.platforms.includes("instagram")) {
-          throw new Error(
-            "Para Reels, selecione Instagram. Para Página Facebook, use o tipo Vídeo."
-          );
-        }
-
         if (values.type === "reels" && !hasVideo) {
           toast.info(
             "Você escolheu Reels, mas a mídia enviada parece ser imagem. Para Reels, envie um vídeo."
@@ -707,6 +694,30 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
         if (values.type === "video" && !hasVideo) {
           throw new Error("Para o tipo Vídeo, envie um arquivo de vídeo.");
+        }
+
+        if (values.platforms.includes("tiktok") && !hasVideo) {
+          throw new Error(
+            "Para publicar no TikTok, envie um vídeo e escolha Reels ou Vídeo."
+          );
+        }
+
+        if (values.platforms.includes("tiktok") && values.type === "story") {
+          throw new Error(
+            "TikTok não usa Story nessa integração. Para TikTok, escolha Reels ou Vídeo."
+          );
+        }
+
+        if (action === "publish-now" && selectedOnlyTiktok) {
+          throw new Error(
+            "TikTok já está conectado e selecionável, mas a publicação direta ainda depende da rota /api/tiktok/publish. O próximo passo é criar essa rota."
+          );
+        }
+
+        if (action === "publish-now" && selectedTiktokWithOthers) {
+          toast.info(
+            "TikTok está selecionado, mas por enquanto a publicação direta será enviada apenas para Instagram/Página Facebook. O próximo passo é criar /api/tiktok/publish."
+          );
         }
       }
 
@@ -766,32 +777,40 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         setPublishSuccess({
           postUrl,
           facebookShareUrl,
-          platforms: values.platforms,
+          platforms: values.platforms.filter((platform) => platform !== "tiktok"),
         });
 
-        toast.success(getPublishedSuccessTitle(values.platforms), {
-          description: postUrl
-            ? `${getPublishedSuccessDescription(
-                values.platforms
-              )} Clique em Ver post para abrir a publicação.`
-            : getPublishedSuccessDescription(values.platforms),
-          duration: 10000,
-          action: postUrl
-            ? {
-                label: "Ver post",
-                onClick: () => {
-                  window.open(postUrl, "_blank", "noopener,noreferrer");
-                },
-              }
-            : undefined,
-        });
+        toast.success(
+          getPublishedSuccessTitle(
+            values.platforms.filter((platform) => platform !== "tiktok")
+          ),
+          {
+            description: postUrl
+              ? `${getPublishedSuccessDescription(
+                  values.platforms.filter((platform) => platform !== "tiktok")
+                )} Clique em Ver post para abrir a publicação.`
+              : getPublishedSuccessDescription(
+                  values.platforms.filter((platform) => platform !== "tiktok")
+                ),
+            duration: 10000,
+            action: postUrl
+              ? {
+                  label: "Ver post",
+                  onClick: () => {
+                    window.open(postUrl, "_blank", "noopener,noreferrer");
+                  },
+                }
+              : undefined,
+          }
+        );
 
         return;
       } else if (action === "schedule") {
         toast.success("Postagem agendada com sucesso.", {
-          description:
-            "Sua postagem foi salva no calendário para a data e hora escolhidas.",
-          duration: 5000,
+          description: values.platforms.includes("tiktok")
+            ? "Sua postagem foi salva com TikTok selecionado. Para publicar automaticamente no TikTok, ainda precisamos criar /api/tiktok/publish e ajustar o cron."
+            : "Sua postagem foi salva no calendário para a data e hora escolhidas.",
+          duration: 7000,
         });
       } else {
         toast.success(
@@ -799,6 +818,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
             ? "Rascunho atualizado com sucesso."
             : "Rascunho salvo com sucesso.",
           {
+            description: values.platforms.includes("tiktok")
+              ? "TikTok foi salvo como plataforma selecionada no rascunho."
+              : undefined,
             duration: 3500,
           }
         );
@@ -977,7 +999,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             : field.value === "reels"
                               ? "Reels usa vídeo vertical. Recomendado: MP4 1080x1920."
                               : field.value === "video"
-                                ? "Vídeo para Página Facebook ou Instagram. Recomendado: MP4."
+                                ? "Vídeo para Página Facebook, Instagram ou TikTok. Recomendado: MP4."
                                 : "Feed usa imagem quadrada ou horizontal. Recomendado: 1080x1080 ou 1200x1200."}
                         </FormDescription>
 
@@ -1032,17 +1054,31 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             </span>
                           </label>
 
-                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md opacity-60 cursor-not-allowed min-h-[58px]">
+                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md cursor-pointer min-h-[58px]">
                             <Checkbox
                               checked={field.value?.includes("tiktok")}
-                              disabled
+                              onCheckedChange={(checked) =>
+                                field.onChange(
+                                  handlePlatformChange(
+                                    checked,
+                                    "tiktok",
+                                    field.value || []
+                                  )
+                                )
+                              }
                             />
                             <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
                               <SiTiktok className="w-4 h-4 shrink-0" />
-                              TikTok em breve
+                              TikTok
                             </span>
                           </label>
                         </div>
+
+                        <p className="text-xs text-muted-foreground">
+                          TikTok já pode ser selecionado. A publicação direta
+                          ainda precisa da rota /api/tiktok/publish para enviar
+                          automaticamente.
+                        </p>
 
                         <FormMessage />
                       </FormItem>
