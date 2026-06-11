@@ -19,18 +19,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).send("State ausente.");
     }
 
-    /*
-      IMPORTANTE:
-      Por enquanto usamos apenas user.info.basic para testar a conexão/login.
-
-      Não coloque ainda:
-      - video.upload
-      - video.publish
-
-      Esses escopos de publicação entram depois, quando o app estiver configurado
-      e aprovado no TikTok Developers.
-    */
-    const scopes = ["user.info.basic"].join(",");
+    const scopes = [
+      "user.info.basic",
+      "video.upload",
+      "video.publish",
+    ].join(",");
 
     const authUrl = new URL("https://www.tiktok.com/v2/auth/authorize/");
 
