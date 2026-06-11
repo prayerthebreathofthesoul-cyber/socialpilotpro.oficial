@@ -10,6 +10,8 @@ type HttpResult = {
   text: string;
 };
 
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+
 function setCorsHeaders(req: VercelRequest, res: VercelResponse) {
   const origin = req.headers.origin;
 
@@ -52,7 +54,7 @@ function requestJson(
         path: `${url.pathname}${url.search}`,
         method: options.method || "GET",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/json; charset=UTF-8",
           ...(body
             ? { "Content-Length": Buffer.byteLength(body).toString() }
             : {}),
@@ -93,6 +95,154 @@ function requestJson(
       req.write(body);
     }
 
+    req.end();
+  });
+}
+
+function downloadVideoBuffer(
+  urlString: string,
+  redirects = 0
+): Promise<{ buffer: Buffer; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error("Muitos redirecionamentos ao baixar o vídeo."));
+      return;
+    }
+
+    const url = new URL(urlString);
+
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: `${url.pathname}${url.search}`,
+        method: "GET",
+        headers: {
+          "User-Agent": "SocialPilotPro/1.0",
+        },
+      },
+      (response) => {
+        const status = response.statusCode || 500;
+
+        if ([301, 302, 303, 307, 308].includes(status)) {
+          const location = response.headers.location;
+
+          if (!location) {
+            reject(new Error("Redirecionamento do vídeo sem location."));
+            return;
+          }
+
+          const nextUrl = new URL(location, urlString).toString();
+
+          resolve(downloadVideoBuffer(nextUrl, redirects + 1));
+          return;
+        }
+
+        if (status < 200 || status >= 300) {
+          reject(
+            new Error(`Erro ao baixar vídeo. Status ${status}.`)
+          );
+          return;
+        }
+
+        const contentLength = Number(response.headers["content-length"] || 0);
+
+        if (contentLength > MAX_VIDEO_BYTES) {
+          reject(
+            new Error("Vídeo maior que 50MB. Envie um vídeo menor.")
+          );
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        let total = 0;
+
+        response.on("data", (chunk) => {
+          const bufferChunk = Buffer.isBuffer(chunk)
+            ? chunk
+            : Buffer.from(chunk);
+
+          total += bufferChunk.length;
+
+          if (total > MAX_VIDEO_BYTES) {
+            req.destroy();
+            reject(
+              new Error("Vídeo maior que 50MB. Envie um vídeo menor.")
+            );
+            return;
+          }
+
+          chunks.push(bufferChunk);
+        });
+
+        response.on("end", () => {
+          const buffer = Buffer.concat(chunks);
+          const contentType =
+            String(response.headers["content-type"] || "").split(";")[0] ||
+            "video/mp4";
+
+          resolve({
+            buffer,
+            contentType,
+          });
+        });
+      }
+    );
+
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+function uploadVideoToTikTok(params: {
+  uploadUrl: string;
+  videoBuffer: Buffer;
+  contentType: string;
+}): Promise<HttpResult> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(params.uploadUrl);
+    const videoSize = params.videoBuffer.length;
+
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: `${url.pathname}${url.search}`,
+        method: "PUT",
+        headers: {
+          "Content-Type": params.contentType || "video/mp4",
+          "Content-Length": videoSize.toString(),
+          "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
+        },
+      },
+      (response) => {
+        let responseText = "";
+
+        response.on("data", (chunk) => {
+          responseText += chunk;
+        });
+
+        response.on("end", () => {
+          let data: any = null;
+
+          try {
+            data = responseText ? JSON.parse(responseText) : null;
+          } catch {
+            data = responseText;
+          }
+
+          const status = response.statusCode || 500;
+
+          resolve({
+            status,
+            ok: status >= 200 && status < 300,
+            data,
+            text: responseText,
+          });
+        });
+      }
+    );
+
+    req.on("error", reject);
+    req.write(params.videoBuffer);
     req.end();
   });
 }
@@ -244,12 +394,14 @@ async function queryCreatorInfo(accessToken: string) {
   );
 }
 
-async function initializeDirectVideoPost(params: {
+async function initializeDirectVideoFileUpload(params: {
   accessToken: string;
-  videoUrl: string;
   title: string;
   privacyLevel: string;
+  videoSize: number;
 }) {
+  const videoSize = params.videoSize;
+
   return requestJson(
     "https://open.tiktokapis.com/v2/post/publish/video/init/",
     {
@@ -267,8 +419,10 @@ async function initializeDirectVideoPost(params: {
           video_cover_timestamp_ms: 1000,
         },
         source_info: {
-          source: "PULL_FROM_URL",
-          video_url: params.videoUrl,
+          source: "FILE_UPLOAD",
+          video_size: videoSize,
+          chunk_size: videoSize,
+          total_chunk_count: 1,
         },
       },
     }
@@ -365,6 +519,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error_message: null,
     });
 
+    console.log("Baixando vídeo para envio FILE_UPLOAD:", {
+      postId,
+      mediaUrl,
+    });
+
+    const downloadedVideo = await downloadVideoBuffer(mediaUrl);
+
+    if (!downloadedVideo.buffer.length) {
+      throw new Error("Não foi possível baixar o vídeo da postagem.");
+    }
+
+    if (downloadedVideo.buffer.length > MAX_VIDEO_BYTES) {
+      throw new Error("Vídeo maior que 50MB. Envie um vídeo menor.");
+    }
+
+    console.log("Vídeo baixado com sucesso:", {
+      postId,
+      videoSize: downloadedVideo.buffer.length,
+      contentType: downloadedVideo.contentType,
+    });
+
     console.log("Consultando creator_info do TikTok");
 
     const creatorInfoResult = await queryCreatorInfo(accessToken);
@@ -390,48 +565,82 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const privacyLevel = choosePrivacyLevel(creatorInfoResult.data);
-
     const title = normalizeCaption(post.caption, post.hashtags);
 
-    console.log("Iniciando direct post no TikTok", {
+    console.log("Inicializando FILE_UPLOAD no TikTok", {
       postId,
       privacyLevel,
-      hasVideoUrl: Boolean(mediaUrl),
-      mediaUrl,
+      videoSize: downloadedVideo.buffer.length,
     });
 
-    const publishResult = await initializeDirectVideoPost({
+    const initResult = await initializeDirectVideoFileUpload({
       accessToken,
-      videoUrl: mediaUrl,
       title,
       privacyLevel,
+      videoSize: downloadedVideo.buffer.length,
     });
 
-    if (!publishResult.ok || !publishResult.data?.data?.publish_id) {
+    const publishId = initResult.data?.data?.publish_id;
+    const uploadUrl = initResult.data?.data?.upload_url;
+
+    if (!initResult.ok || !publishId || !uploadUrl) {
       console.error(
-        "Erro ao iniciar publicação TikTok:",
-        publishResult.status,
-        publishResult.text
+        "Erro ao inicializar FILE_UPLOAD TikTok:",
+        initResult.status,
+        initResult.text
       );
 
       await updatePostStatus(supabaseUrl, serviceRoleKey, postId, {
         status: "failed",
         error_message:
-          publishResult.data?.error?.message ||
-          publishResult.data?.error?.code ||
-          "Erro ao iniciar publicação no TikTok.",
+          initResult.data?.error?.message ||
+          initResult.data?.error?.code ||
+          "Erro ao inicializar envio do vídeo no TikTok.",
       });
 
       return res.status(400).json({
         error:
-          publishResult.data?.error?.message ||
-          publishResult.data?.error?.code ||
-          "Erro ao iniciar publicação no TikTok.",
-        details: publishResult.data || publishResult.text,
+          initResult.data?.error?.message ||
+          initResult.data?.error?.code ||
+          "Erro ao inicializar envio do vídeo no TikTok.",
+        details: initResult.data || initResult.text,
       });
     }
 
-    const publishId = publishResult.data.data.publish_id;
+    console.log("Enviando arquivo para upload_url do TikTok", {
+      postId,
+      publishId,
+    });
+
+    const uploadResult = await uploadVideoToTikTok({
+      uploadUrl,
+      videoBuffer: downloadedVideo.buffer,
+      contentType: downloadedVideo.contentType || "video/mp4",
+    });
+
+    if (!uploadResult.ok) {
+      console.error(
+        "Erro ao enviar arquivo para TikTok:",
+        uploadResult.status,
+        uploadResult.text
+      );
+
+      await updatePostStatus(supabaseUrl, serviceRoleKey, postId, {
+        status: "failed",
+        error_message:
+          uploadResult.data?.error?.message ||
+          uploadResult.data?.error?.code ||
+          "Erro ao enviar vídeo para o TikTok.",
+      });
+
+      return res.status(400).json({
+        error:
+          uploadResult.data?.error?.message ||
+          uploadResult.data?.error?.code ||
+          "Erro ao enviar vídeo para o TikTok.",
+        details: uploadResult.data || uploadResult.text,
+      });
+    }
 
     await updatePostStatus(supabaseUrl, serviceRoleKey, postId, {
       status: "published",
@@ -439,7 +648,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error_message: null,
     });
 
-    console.log("Publicação TikTok iniciada com sucesso:", {
+    console.log("Publicação TikTok enviada com sucesso:", {
       postId,
       publishId,
     });
@@ -449,8 +658,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       platform: "tiktok",
       publishId,
       message:
-        "Publicação enviada para o TikTok. O processamento pode levar alguns instantes.",
-      result: publishResult.data,
+        "Vídeo enviado para o TikTok. O processamento pode levar alguns instantes.",
+      result: initResult.data,
     });
   } catch (error: any) {
     console.error("Erro inesperado ao publicar TikTok:", {
