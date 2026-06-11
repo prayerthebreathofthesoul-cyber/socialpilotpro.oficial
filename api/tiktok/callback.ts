@@ -10,6 +10,32 @@ type HttpResult = {
   text: string;
 };
 
+function getBaseUrl(req: VercelRequest) {
+  const host = req.headers.host || "socialpilotpro.com.br";
+  const proto =
+    String(req.headers["x-forwarded-proto"] || "").split(",")[0] || "https";
+
+  return `${proto}://${host}`;
+}
+
+function redirectToSettings(
+  req: VercelRequest,
+  res: VercelResponse,
+  status: string,
+  message?: string
+) {
+  const baseUrl = getBaseUrl(req);
+  const url = new URL("/settings", baseUrl);
+
+  url.searchParams.set("tiktok", status);
+
+  if (message) {
+    url.searchParams.set("message", message.slice(0, 180));
+  }
+
+  return res.redirect(url.toString());
+}
+
 function requestJson(
   urlString: string,
   options: {
@@ -17,6 +43,7 @@ function requestJson(
     headers?: Record<string, string>;
     body?: any;
     formBody?: URLSearchParams;
+    timeoutMs?: number;
   } = {}
 ): Promise<HttpResult> {
   return new Promise((resolve, reject) => {
@@ -33,6 +60,8 @@ function requestJson(
     const contentType = options.formBody
       ? "application/x-www-form-urlencoded"
       : "application/json";
+
+    const timeoutMs = options.timeoutMs || 12000;
 
     const req = https.request(
       {
@@ -75,6 +104,10 @@ function requestJson(
       }
     );
 
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Timeout ao chamar ${url.hostname}`));
+    });
+
     req.on("error", reject);
 
     if (body) {
@@ -114,7 +147,30 @@ async function getTikTokUserInfo(accessToken: string) {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
+    timeoutMs: 12000,
   });
+}
+
+async function deleteOAuthState(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  state: string
+) {
+  const headers = supabaseHeaders(serviceRoleKey);
+
+  const deleteStateUrl =
+    `${supabaseUrl}/rest/v1/tiktok_oauth_states` +
+    `?state=eq.${encodeURIComponent(state)}`;
+
+  const result = await requestJson(deleteStateUrl, {
+    method: "DELETE",
+    headers,
+    timeoutMs: 10000,
+  });
+
+  if (!result.ok) {
+    console.error("Erro ao limpar state TikTok:", result.status, result.text);
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -124,42 +180,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const code = String(req.query.code || "").trim();
     const state = String(req.query.state || "").trim();
     const error = String(req.query.error || "").trim();
+    const errorDescription = String(req.query.error_description || "").trim();
 
     const clientKey = String(process.env.TIKTOK_CLIENT_KEY || "").trim();
     const clientSecret = String(process.env.TIKTOK_CLIENT_SECRET || "").trim();
     const redirectUri = String(process.env.TIKTOK_REDIRECT_URI || "").trim();
 
     const supabaseUrl =
-      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+      process.env.SUPABASE_URL ||
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      "";
 
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-    console.log("Code recebido:", Boolean(code));
-    console.log("State recebido:", Boolean(state));
-    console.log("Erro TikTok recebido:", error || "nenhum");
-    console.log("TIKTOK_CLIENT_KEY existe:", Boolean(clientKey));
-    console.log("TIKTOK_CLIENT_SECRET existe:", Boolean(clientSecret));
-    console.log("TIKTOK_REDIRECT_URI existe:", Boolean(redirectUri));
-    console.log("SUPABASE_URL existe:", Boolean(supabaseUrl));
-    console.log("SUPABASE_SERVICE_ROLE_KEY existe:", Boolean(serviceRoleKey));
+    console.log("Callback TikTok parâmetros:", {
+      hasCode: Boolean(code),
+      hasState: Boolean(state),
+      error: error || "nenhum",
+      hasClientKey: Boolean(clientKey),
+      hasClientSecret: Boolean(clientSecret),
+      hasRedirectUri: Boolean(redirectUri),
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasServiceRoleKey: Boolean(serviceRoleKey),
+      redirectUri,
+    });
 
     if (error) {
-      console.error("TikTok retornou erro:", error);
-      return res.redirect("/settings?tiktok=error");
+      console.error("TikTok retornou erro:", {
+        error,
+        errorDescription,
+      });
+
+      return redirectToSettings(
+        req,
+        res,
+        "error",
+        errorDescription || error
+      );
     }
 
     if (!code || !state) {
-      return res.redirect("/settings?tiktok=error");
+      return redirectToSettings(req, res, "invalid_callback");
     }
 
     if (!clientKey || !clientSecret || !redirectUri) {
       console.error("Variáveis do TikTok ausentes.");
-      return res.redirect("/settings?tiktok=server_config_error");
+
+      return redirectToSettings(req, res, "server_config_error");
     }
 
     if (!supabaseUrl || !serviceRoleKey) {
       console.error("Variáveis do Supabase ausentes.");
-      return res.redirect("/settings?tiktok=supabase_config_error");
+
+      return redirectToSettings(req, res, "supabase_config_error");
     }
 
     const headers = supabaseHeaders(serviceRoleKey);
@@ -174,6 +248,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const stateResult = await requestJson(stateUrl, {
       method: "GET",
       headers,
+      timeoutMs: 10000,
     });
 
     if (!stateResult.ok) {
@@ -183,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stateResult.text
       );
 
-      return res.redirect("/settings?tiktok=invalid_state");
+      return redirectToSettings(req, res, "invalid_state");
     }
 
     const oauthState = Array.isArray(stateResult.data)
@@ -192,12 +267,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!oauthState) {
       console.error("State TikTok não encontrado.");
-      return res.redirect("/settings?tiktok=invalid_state");
+
+      return redirectToSettings(req, res, "invalid_state");
     }
 
     if (new Date(oauthState.expires_at).getTime() < Date.now()) {
       console.error("State TikTok expirado.");
-      return res.redirect("/settings?tiktok=expired_state");
+
+      await deleteOAuthState(supabaseUrl, serviceRoleKey, state);
+
+      return redirectToSettings(req, res, "expired_state");
     }
 
     console.log("Trocando code por token TikTok");
@@ -215,6 +294,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       {
         method: "POST",
         formBody,
+        timeoutMs: 15000,
       }
     );
 
@@ -225,7 +305,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         tokenResult.text
       );
 
-      return res.redirect("/settings?tiktok=token_error");
+      return redirectToSettings(req, res, "token_error");
     }
 
     const accessToken = tokenResult.data.access_token;
@@ -238,9 +318,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tokenResult.data.refresh_expires_in
     );
 
-    console.log("Token TikTok gerado com sucesso");
-    console.log("Open ID recebido:", Boolean(openId));
-    console.log("Scope recebido:", scope || "não informado");
+    console.log("Token TikTok gerado com sucesso:", {
+      hasOpenId: Boolean(openId),
+      scope: scope || "não informado",
+      hasRefreshToken: Boolean(refreshToken),
+    });
 
     console.log("Buscando dados da conta TikTok");
 
@@ -252,7 +334,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tiktokUser = userInfoResult.data?.data?.user || null;
     } else {
       console.error(
-        "Erro ao buscar dados do criador TikTok:",
+        "Erro ao buscar dados da conta TikTok:",
         userInfoResult.status,
         userInfoResult.text
       );
@@ -266,7 +348,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const accountId = tiktokUser?.open_id || openId || accountName;
 
-    console.log("Conta TikTok:", accountName);
+    console.log("Conta TikTok identificada:", {
+      accountName,
+      accountId,
+    });
 
     console.log("Removendo conexão antiga do TikTok");
 
@@ -278,6 +363,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const deleteResult = await requestJson(deleteUrl, {
       method: "DELETE",
       headers,
+      timeoutMs: 10000,
     });
 
     if (!deleteResult.ok) {
@@ -287,7 +373,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         deleteResult.text
       );
 
-      return res.redirect("/settings?tiktok=delete_error");
+      return redirectToSettings(req, res, "delete_error");
     }
 
     console.log("Salvando conta TikTok conectada");
@@ -314,6 +400,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: "POST",
       headers,
       body: rowToInsert,
+      timeoutMs: 10000,
     });
 
     if (!insertResult.ok) {
@@ -323,12 +410,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         insertResult.text
       );
 
-      return res.redirect("/settings?tiktok=save_error");
+      return redirectToSettings(
+        req,
+        res,
+        "save_error",
+        insertResult.text || "Erro ao salvar TikTok."
+      );
     }
+
+    await deleteOAuthState(supabaseUrl, serviceRoleKey, state);
 
     console.log("Conta TikTok salva com sucesso");
 
-    return res.redirect("/settings?tiktok=connected");
+    return redirectToSettings(req, res, "connected");
   } catch (error: any) {
     console.error("Erro inesperado no callback TikTok:", {
       message: error?.message,
@@ -336,6 +430,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       stack: error?.stack,
     });
 
-    return res.redirect("/settings?tiktok=unexpected_error");
+    return redirectToSettings(
+      req,
+      res,
+      "unexpected_error",
+      error?.message || "Erro inesperado no callback TikTok."
+    );
   }
 }
