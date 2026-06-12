@@ -915,90 +915,113 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       )}
 
       {publishSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-green-300 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500 sm:p-8">
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-green-600 shadow-lg animate-in zoom-in duration-700 sm:h-24 sm:w-24">
-                <CheckCircle2 className="h-12 w-12 text-white sm:h-14 sm:w-14" />
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6 backdrop-blur-sm">
+          <div className="relative max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-3xl border border-green-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500">
+            <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-green-500 via-emerald-500 to-lime-400" />
 
-              <h2 className="max-w-2xl text-3xl font-extrabold leading-tight text-green-800 sm:text-5xl">
-                {getPublishedSuccessTitle(publishSuccess.platforms)}
-              </h2>
+            <div className="absolute -right-20 -top-20 h-44 w-44 rounded-full bg-green-100 blur-3xl" />
+            <div className="absolute -bottom-24 -left-24 h-52 w-52 rounded-full bg-emerald-100 blur-3xl" />
 
-              <p className="mt-4 max-w-2xl text-lg text-green-700 sm:text-2xl">
-                {getPublishedSuccessDescription(publishSuccess.platforms)}
-              </p>
+            <div className="relative max-h-[92vh] overflow-y-auto px-6 pb-6 pt-10 sm:px-10 sm:pb-10">
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-green-600 shadow-xl shadow-green-200 ring-8 ring-green-100 sm:h-28 sm:w-28">
+                  <CheckCircle2 className="h-14 w-14 text-white sm:h-16 sm:w-16" />
+                </div>
 
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
-                Agora você pode abrir a publicação, compartilhar no Facebook ou
-                voltar ao calendário.
-              </p>
+                <div className="mb-3 inline-flex items-center rounded-full border border-green-200 bg-green-50 px-4 py-1.5 text-sm font-semibold text-green-700">
+                  Publicação concluída
+                </div>
 
-              <div className="mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
-                {publishSuccess.postUrl && (
-                  <>
-                    <Button
-                      type="button"
-                      size="lg"
-                      className="min-h-[62px] w-full rounded-xl bg-green-700 px-5 py-4 text-base font-semibold text-white hover:bg-green-800"
-                      onClick={() =>
-                        window.open(
-                          publishSuccess.postUrl!,
-                          "_blank",
-                          "noopener,noreferrer"
-                        )
-                      }
-                    >
-                      <ExternalLink className="mr-2 h-5 w-5 shrink-0" />
-                      Ver publicação
-                    </Button>
+                <h2 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl">
+                  {getPublishedSuccessTitle(publishSuccess.platforms)}
+                </h2>
 
-                    <Button
-                      type="button"
-                      size="lg"
-                      variant="outline"
-                      className="min-h-[62px] w-full rounded-xl border-blue-600 px-5 py-4 text-base font-semibold text-blue-700 hover:bg-blue-50"
-                      onClick={() => {
-                        const urlToShare =
-                          publishSuccess.facebookShareUrl ||
-                          publishSuccess.postUrl ||
-                          "";
+                <p className="mt-4 max-w-2xl text-lg font-medium text-green-700 sm:text-2xl">
+                  {getPublishedSuccessDescription(publishSuccess.platforms)}
+                </p>
 
-                        const shareUrl = encodeURIComponent(urlToShare);
+                <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-600 sm:text-base">
+                  Sua publicação foi enviada com sucesso. Agora você pode abrir o
+                  post, compartilhar no Facebook ou voltar ao calendário.
+                </p>
 
-                        window.open(
-                          `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`,
-                          "_blank",
-                          "noopener,noreferrer"
-                        );
-                      }}
-                    >
-                      <Facebook className="mr-2 h-5 w-5 shrink-0" />
-                      Compartilhar no Facebook
-                    </Button>
-                  </>
-                )}
+                <div className="mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
+                  {publishSuccess.postUrl && (
+                    <>
+                      <Button
+                        type="button"
+                        size="lg"
+                        className="min-h-[64px] w-full rounded-2xl bg-green-700 px-5 py-4 text-base font-bold text-white shadow-lg shadow-green-100 transition-all hover:bg-green-800 hover:shadow-xl"
+                        onClick={() =>
+                          window.open(
+                            publishSuccess.postUrl!,
+                            "_blank",
+                            "noopener,noreferrer"
+                          )
+                        }
+                      >
+                        <ExternalLink className="mr-2 h-5 w-5 shrink-0" />
+                        Ver publicação
+                      </Button>
 
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  className="min-h-[62px] w-full rounded-xl px-5 py-4 text-base font-semibold"
-                  onClick={onSuccess}
-                >
-                  Voltar ao calendário
-                </Button>
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="outline"
+                        className="min-h-[64px] w-full rounded-2xl border-blue-600 bg-white px-5 py-4 text-base font-bold text-blue-700 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md"
+                        onClick={() => {
+                          const urlToShare =
+                            publishSuccess.facebookShareUrl ||
+                            publishSuccess.postUrl ||
+                            "";
 
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="ghost"
-                  className="min-h-[62px] w-full rounded-xl px-5 py-4 text-base font-semibold"
-                  onClick={() => setPublishSuccess(null)}
-                >
-                  Continuar editando
-                </Button>
+                          const shareUrl = encodeURIComponent(urlToShare);
+
+                          window.open(
+                            `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`,
+                            "_blank",
+                            "noopener,noreferrer"
+                          );
+                        }}
+                      >
+                        <Facebook className="mr-2 h-5 w-5 shrink-0" />
+                        Compartilhar
+                      </Button>
+                    </>
+                  )}
+
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="outline"
+                    className="min-h-[64px] w-full rounded-2xl border-slate-300 bg-white px-5 py-4 text-base font-bold text-slate-800 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md"
+                    onClick={onSuccess}
+                  >
+                    Voltar ao calendário
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="ghost"
+                    className="min-h-[64px] w-full rounded-2xl px-5 py-4 text-base font-bold text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900"
+                    onClick={() => setPublishSuccess(null)}
+                  >
+                    Continuar editando
+                  </Button>
+                </div>
+
+                <div className="mt-7 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Próximo passo recomendado
+                  </p>
+
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                    Confira a publicação aberta, confirme se imagem, legenda e
+                    hashtags estão corretas e depois acompanhe o desempenho em
+                    Analytics.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
