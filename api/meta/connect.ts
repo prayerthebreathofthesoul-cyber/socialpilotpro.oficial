@@ -19,8 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
-      "instagram_business_basic",
-      "instagram_business_content_publish",
+      "instagram_basic",
+      "instagram_content_publish",
       "business_management",
     ].join(",");
 
