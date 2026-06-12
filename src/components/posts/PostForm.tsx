@@ -901,23 +901,27 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
   return (
     <div className="space-y-6">
       {publishingOverlay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-8 shadow-2xl border animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl border bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500 sm:p-8">
             <div className="flex flex-col items-center text-center">
-              <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center mb-5">
-                <Loader2 className="w-10 h-10 text-blue-700 animate-spin" />
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100">
+                <Loader2 className="h-10 w-10 animate-spin text-blue-700" />
               </div>
 
-              <h2 className="text-3xl font-bold text-slate-900">
-                {getPublishingMessage(selectedPlatforms, isCarousel, isVideoPost)}
+              <h2 className="max-w-lg text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">
+                {getPublishingMessage(
+                  selectedPlatforms,
+                  isCarousel,
+                  isVideoPost
+                )}
               </h2>
 
-              <p className="text-lg text-slate-600 mt-3">
+              <p className="mt-3 max-w-lg text-base text-slate-600 sm:text-lg">
                 Aguarde um instante. Estamos enviando sua publicação para{" "}
                 {formatSelectedPlatforms(selectedPlatforms)}.
               </p>
 
-              <div className="mt-6 w-full rounded-lg bg-blue-50 border border-blue-200 p-4">
+              <div className="mt-6 w-full rounded-lg border border-blue-200 bg-blue-50 p-4">
                 <p className="text-sm font-medium text-blue-800">
                   Não feche esta tela enquanto a publicação está sendo enviada.
                 </p>
@@ -928,33 +932,33 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       )}
 
       {publishSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-8 shadow-2xl border border-green-300 animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-green-300 bg-white p-5 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500 sm:p-8">
             <div className="flex flex-col items-center text-center">
-              <div className="w-24 h-24 rounded-full bg-green-600 flex items-center justify-center mb-5 shadow-lg animate-in zoom-in duration-700">
-                <CheckCircle2 className="w-14 h-14 text-white" />
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-green-600 shadow-lg animate-in zoom-in duration-700 sm:h-24 sm:w-24">
+                <CheckCircle2 className="h-12 w-12 text-white sm:h-14 sm:w-14" />
               </div>
 
-              <h2 className="text-4xl font-extrabold text-green-800">
+              <h2 className="max-w-2xl text-2xl font-extrabold leading-tight text-green-800 sm:text-4xl">
                 {getPublishedSuccessTitle(publishSuccess.platforms)}
               </h2>
 
-              <p className="text-xl text-green-700 mt-4">
+              <p className="mt-4 max-w-2xl text-base text-green-700 sm:text-xl">
                 {getPublishedSuccessDescription(publishSuccess.platforms)}
               </p>
 
-              <p className="text-base text-slate-600 mt-3">
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
                 Agora você pode abrir o post publicado, compartilhar no seu
                 perfil pessoal do Facebook ou voltar ao calendário.
               </p>
 
-              <div className="mt-8 flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+              <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {publishSuccess.postUrl && (
                   <>
                     <Button
                       type="button"
                       size="lg"
-                      className="bg-green-700 hover:bg-green-800 text-white text-base px-6 py-6"
+                      className="min-h-[54px] w-full whitespace-normal rounded-lg bg-green-700 px-4 py-3 text-sm font-semibold text-white hover:bg-green-800 sm:text-base"
                       onClick={() =>
                         window.open(
                           publishSuccess.postUrl!,
@@ -963,7 +967,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         )
                       }
                     >
-                      <ExternalLink className="w-5 h-5 mr-2" />
+                      <ExternalLink className="mr-2 h-5 w-5 shrink-0" />
                       Ver post publicado
                     </Button>
 
@@ -971,7 +975,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       type="button"
                       size="lg"
                       variant="outline"
-                      className="text-base px-6 py-6 border-blue-600 text-blue-700 hover:bg-blue-50"
+                      className="min-h-[54px] w-full whitespace-normal rounded-lg border-blue-600 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 sm:text-base"
                       onClick={() => {
                         const urlToShare =
                           publishSuccess.facebookShareUrl ||
@@ -987,7 +991,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         );
                       }}
                     >
-                      <Facebook className="w-5 h-5 mr-2" />
+                      <Facebook className="mr-2 h-5 w-5 shrink-0" />
                       Compartilhar no meu perfil
                     </Button>
                   </>
@@ -997,7 +1001,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="text-base px-6 py-6"
+                  className="min-h-[54px] w-full whitespace-normal rounded-lg px-4 py-3 text-sm font-semibold sm:text-base"
                   onClick={onSuccess}
                 >
                   Voltar ao calendário
@@ -1007,7 +1011,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   type="button"
                   size="lg"
                   variant="ghost"
-                  className="text-base px-6 py-6"
+                  className="min-h-[54px] w-full whitespace-normal rounded-lg px-4 py-3 text-sm font-semibold sm:text-base"
                   onClick={() => setPublishSuccess(null)}
                 >
                   Continuar nesta tela
@@ -1018,7 +1022,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <Card>
             <CardContent className="p-6">
@@ -1066,8 +1070,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       <FormItem className="space-y-4">
                         <FormLabel>Plataformas</FormLabel>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md cursor-pointer min-h-[58px]">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <label className="flex min-h-[58px] cursor-pointer flex-row items-center justify-center space-x-2 space-y-0 rounded-md border px-3 py-3">
                             <Checkbox
                               checked={field.value?.includes("instagram")}
                               onCheckedChange={(checked) =>
@@ -1080,13 +1084,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                 )
                               }
                             />
-                            <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
-                              <Instagram className="w-4 h-4 text-pink-600 shrink-0" />
+                            <span className="flex items-center gap-2 whitespace-nowrap text-sm font-normal">
+                              <Instagram className="h-4 w-4 shrink-0 text-pink-600" />
                               Instagram
                             </span>
                           </label>
 
-                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md cursor-pointer min-h-[58px]">
+                          <label className="flex min-h-[58px] cursor-pointer flex-row items-center justify-center space-x-2 space-y-0 rounded-md border px-3 py-3">
                             <Checkbox
                               checked={field.value?.includes("facebook")}
                               onCheckedChange={(checked) =>
@@ -1099,13 +1103,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                 )
                               }
                             />
-                            <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
-                              <Facebook className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span className="flex items-center gap-2 whitespace-nowrap text-sm font-normal">
+                              <Facebook className="h-4 w-4 shrink-0 text-blue-600" />
                               Página Facebook
                             </span>
                           </label>
 
-                          <label className="flex flex-row items-center justify-center space-x-2 space-y-0 px-3 py-3 border rounded-md cursor-pointer min-h-[58px]">
+                          <label className="flex min-h-[58px] cursor-pointer flex-row items-center justify-center space-x-2 space-y-0 rounded-md border px-3 py-3">
                             <Checkbox
                               checked={field.value?.includes("tiktok")}
                               onCheckedChange={(checked) =>
@@ -1118,8 +1122,8 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                 )
                               }
                             />
-                            <span className="font-normal flex items-center gap-2 text-sm whitespace-nowrap">
-                              <SiTiktok className="w-4 h-4 shrink-0" />
+                            <span className="flex items-center gap-2 whitespace-nowrap text-sm font-normal">
+                              <SiTiktok className="h-4 w-4 shrink-0" />
                               TikTok
                             </span>
                           </label>
@@ -1175,7 +1179,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                           )}
                         </FormLabel>
 
-                        <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                           <input
                             ref={fileInputRef}
                             type="file"
@@ -1192,9 +1196,9 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             disabled={isUploadingMedia || isPending}
                           >
                             {isUploadingMedia ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : (
-                              <Upload className="w-4 h-4 mr-2" />
+                              <Upload className="mr-2 h-4 w-4" />
                             )}
                             {isUploadingMedia
                               ? "Enviando..."
@@ -1209,7 +1213,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                         </FormDescription>
 
                         {mediaUrls.length > 0 && (
-                          <div className="space-y-3 mt-4">
+                          <div className="mt-4 space-y-3">
                             {mediaKind === "image" && mediaUrls.length > 1 && (
                               <p className="text-xs text-muted-foreground">
                                 Arraste as imagens para mudar a ordem. A primeira
@@ -1217,7 +1221,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                               </p>
                             )}
 
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                               {mediaUrls.map((url, index) => {
                                 const itemIsVideo =
                                   isVideoUrl(url) || mediaKind === "video";
@@ -1244,7 +1248,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                       setDraggedMediaIndex(null);
                                     }}
                                     onDragEnd={() => setDraggedMediaIndex(null)}
-                                    className={`relative border rounded-md overflow-hidden bg-muted transition ${
+                                    className={`relative overflow-hidden rounded-md border bg-muted transition ${
                                       itemIsVideo
                                         ? ""
                                         : "cursor-move hover:ring-2 hover:ring-primary/50"
@@ -1257,27 +1261,27 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                     {itemIsVideo ? (
                                       <video
                                         src={url}
-                                        className="w-full aspect-square object-cover"
+                                        className="aspect-square w-full object-cover"
                                         controls
                                       />
                                     ) : (
                                       <img
                                         src={url}
                                         alt={`Imagem ${index + 1}`}
-                                        className="w-full aspect-square object-cover"
+                                        className="aspect-square w-full object-cover"
                                       />
                                     )}
 
                                     {!itemIsVideo && (
-                                      <div className="absolute top-2 left-2 h-7 px-2 rounded-md bg-black/60 text-white flex items-center gap-1 text-xs">
-                                        <GripVertical className="w-4 h-4" />
+                                      <div className="absolute left-2 top-2 flex h-7 items-center gap-1 rounded-md bg-black/60 px-2 text-xs text-white">
+                                        <GripVertical className="h-4 w-4" />
                                         Arrastar
                                       </div>
                                     )}
 
                                     {itemIsVideo && (
-                                      <div className="absolute top-2 left-2 h-7 px-2 rounded-md bg-black/60 text-white flex items-center gap-1 text-xs">
-                                        <Video className="w-4 h-4" />
+                                      <div className="absolute left-2 top-2 flex h-7 items-center gap-1 rounded-md bg-black/60 px-2 text-xs text-white">
+                                        <Video className="h-4 w-4" />
                                         Vídeo
                                       </div>
                                     )}
@@ -1286,15 +1290,15 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                       type="button"
                                       size="icon"
                                       variant="destructive"
-                                      className="absolute top-2 right-2 h-7 w-7"
+                                      className="absolute right-2 top-2 h-7 w-7"
                                       onClick={() => removeMediaUrl(url)}
                                       disabled={isPending || isUploadingMedia}
                                     >
-                                      <X className="w-4 h-4" />
+                                      <X className="h-4 w-4" />
                                     </Button>
 
                                     {!itemIsVideo && (
-                                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs px-2 py-2 space-y-2">
+                                      <div className="absolute bottom-0 left-0 right-0 space-y-2 bg-black/70 px-2 py-2 text-xs text-white">
                                         <div className="font-medium">
                                           {index === 0
                                             ? "Capa / Imagem 1"
@@ -1314,7 +1318,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                               isUploadingMedia
                                             }
                                           >
-                                            <ArrowLeft className="w-4 h-4" />
+                                            <ArrowLeft className="h-4 w-4" />
                                           </Button>
 
                                           <Button
@@ -1329,7 +1333,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                                               isUploadingMedia
                                             }
                                           >
-                                            <ArrowRight className="w-4 h-4" />
+                                            <ArrowRight className="h-4 w-4" />
                                           </Button>
                                         </div>
                                       </div>
@@ -1388,14 +1392,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       <FormItem>
                         <FormLabel>Data e Hora de Agendamento</FormLabel>
 
-                        <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                           <FormControl>
                             <Input type="datetime-local" {...field} />
                           </FormControl>
 
                           <Button
                             type="button"
-                            className="sm:w-auto whitespace-nowrap"
+                            className="whitespace-nowrap sm:w-auto"
                             onClick={form.handleSubmit((data) =>
                               onSubmit(data, "schedule")
                             )}
@@ -1428,10 +1432,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           </Card>
         </div>
 
-        <div className="lg:col-span-1 space-y-6">
+        <div className="space-y-6 lg:col-span-1">
           <Card className="sticky top-6">
-            <CardContent className="p-6 space-y-4">
-              <h3 className="font-semibold text-lg border-b pb-2">Ações</h3>
+            <CardContent className="space-y-4 p-6">
+              <h3 className="border-b pb-2 text-lg font-semibold">Ações</h3>
 
               <div className="space-y-3 pt-2">
                 <Button
@@ -1471,11 +1475,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
               </div>
 
               <div className="mt-8">
-                <h3 className="font-semibold text-sm text-muted-foreground mb-1 uppercase tracking-wider">
+                <h3 className="mb-1 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Preview Visual
                 </h3>
 
-                <p className="text-xs text-muted-foreground mb-3">
+                <p className="mb-3 text-xs text-muted-foreground">
                   {postType === "story"
                     ? "Formato Story vertical. Recomendado: 1080x1920."
                     : postType === "reels"
@@ -1487,26 +1491,26 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                           : "Formato Feed. Recomendado: imagem quadrada ou horizontal."}
                 </p>
 
-                <div className="border rounded-md overflow-hidden bg-background">
-                  <div className="p-3 flex items-center gap-2 border-b">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
+                <div className="overflow-hidden rounded-md border bg-background">
+                  <div className="flex items-center gap-2 border-b p-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold">
                       SP
                     </div>
-                    <span className="font-medium text-sm">SocialPilot Pro</span>
+                    <span className="text-sm font-medium">SocialPilot Pro</span>
                   </div>
 
                   {mediaPreview ? (
                     <div
                       className={
                         isStory || isReels
-                          ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex items-center justify-center overflow-hidden p-2"
-                          : "aspect-square bg-muted flex items-center justify-center overflow-hidden p-2"
+                          ? "mx-auto flex aspect-[9/16] w-full max-w-[230px] items-center justify-center overflow-hidden bg-muted p-2"
+                          : "flex aspect-square items-center justify-center overflow-hidden bg-muted p-2"
                       }
                     >
                       {mediaKind === "video" || isVideoUrl(mediaPreview) ? (
                         <video
                           src={mediaPreview}
-                          className="max-w-full max-h-full object-contain bg-black rounded-md"
+                          className="max-h-full max-w-full rounded-md bg-black object-contain"
                           controls
                           onError={() => {
                             toast.error(
@@ -1517,7 +1521,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       ) : (
                         <img
                           src={mediaPreview}
-                          className="max-w-full max-h-full object-contain bg-white rounded-md"
+                          className="max-h-full max-w-full rounded-md bg-white object-contain"
                           alt="Preview da mídia"
                           onError={(event) => {
                             event.currentTarget.style.display = "none";
@@ -1532,14 +1536,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     <div
                       className={
                         isStory || isReels
-                          ? "mx-auto w-full max-w-[230px] aspect-[9/16] bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
-                          : "aspect-square bg-muted flex flex-col items-center justify-center text-muted-foreground text-xs"
+                          ? "mx-auto flex aspect-[9/16] w-full max-w-[230px] flex-col items-center justify-center bg-muted text-xs text-muted-foreground"
+                          : "flex aspect-square flex-col items-center justify-center bg-muted text-xs text-muted-foreground"
                       }
                     >
                       {postType === "reels" || postType === "video" ? (
-                        <Video className="w-8 h-8 mb-2 opacity-50" />
+                        <Video className="mb-2 h-8 w-8 opacity-50" />
                       ) : (
-                        <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                        <ImageIcon className="mb-2 h-8 w-8 opacity-50" />
                       )}
                       {postType === "story"
                         ? "Preview do Story"
@@ -1559,15 +1563,15 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                             key={`${url}-thumb-${index}`}
                             src={url}
                             alt={`Miniatura ${index + 1}`}
-                            className="w-12 h-12 rounded-md object-cover border"
+                            className="h-12 w-12 rounded-md border object-cover"
                           />
                         ))}
                       </div>
                     </div>
                   )}
 
-                  <div className="p-3 text-sm space-y-2">
-                    <p className="font-semibold text-sm line-clamp-2">
+                  <div className="space-y-2 p-3 text-sm">
+                    <p className="line-clamp-2 text-sm font-semibold">
                       {form.watch("title") || "Título do post"}
                     </p>
 
@@ -1576,13 +1580,13 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                     </p>
 
                     {form.watch("hashtags") && (
-                      <p className="text-blue-600 mt-1 line-clamp-2">
+                      <p className="mt-1 line-clamp-2 text-blue-600">
                         {form.watch("hashtags")}
                       </p>
                     )}
 
                     {hasMedia && (
-                      <p className="text-xs text-muted-foreground pt-1">
+                      <p className="pt-1 text-xs text-muted-foreground">
                         Tipo:{" "}
                         {mediaKind === "video"
                           ? postType === "reels"
