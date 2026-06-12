@@ -817,16 +817,11 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
       if (action === "publish-now") {
         setPublishingOverlay(true);
 
-        const loadingToast = toast.loading(
-          getPublishingMessage(values.platforms, hasCarousel, hasVideo)
-        );
-
         const publishResult = await publishPostNow(
           savedPostId,
           values.platforms
         );
 
-        toast.dismiss(loadingToast);
         setPublishingOverlay(false);
 
         const postUrl = getPublishedPostUrl(publishResult);
