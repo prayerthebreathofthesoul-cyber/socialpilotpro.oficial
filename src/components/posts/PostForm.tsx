@@ -838,23 +838,6 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
           platforms: values.platforms,
         });
 
-        toast.success(getPublishedSuccessTitle(values.platforms), {
-          description: postUrl
-            ? `${getPublishedSuccessDescription(
-                values.platforms
-              )} Clique em Ver post para abrir a publicação.`
-            : getPublishedSuccessDescription(values.platforms),
-          duration: 10000,
-          action: postUrl
-            ? {
-                label: "Ver post",
-                onClick: () => {
-                  window.open(postUrl, "_blank", "noopener,noreferrer");
-                },
-              }
-            : undefined,
-        });
-
         return;
       } else if (action === "schedule") {
         toast.success("Postagem agendada com sucesso.", {
@@ -933,32 +916,32 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
 
       {publishSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-green-300 bg-white p-5 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500 sm:p-8">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-green-300 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-top-6 duration-500 sm:p-8">
             <div className="flex flex-col items-center text-center">
               <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-green-600 shadow-lg animate-in zoom-in duration-700 sm:h-24 sm:w-24">
                 <CheckCircle2 className="h-12 w-12 text-white sm:h-14 sm:w-14" />
               </div>
 
-              <h2 className="max-w-2xl text-2xl font-extrabold leading-tight text-green-800 sm:text-4xl">
+              <h2 className="max-w-2xl text-3xl font-extrabold leading-tight text-green-800 sm:text-5xl">
                 {getPublishedSuccessTitle(publishSuccess.platforms)}
               </h2>
 
-              <p className="mt-4 max-w-2xl text-base text-green-700 sm:text-xl">
+              <p className="mt-4 max-w-2xl text-lg text-green-700 sm:text-2xl">
                 {getPublishedSuccessDescription(publishSuccess.platforms)}
               </p>
 
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
-                Agora você pode abrir o post publicado, compartilhar no seu
-                perfil pessoal do Facebook ou voltar ao calendário.
+                Agora você pode abrir a publicação, compartilhar no Facebook ou
+                voltar ao calendário.
               </p>
 
-              <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
                 {publishSuccess.postUrl && (
                   <>
                     <Button
                       type="button"
                       size="lg"
-                      className="min-h-[54px] w-full whitespace-normal rounded-lg bg-green-700 px-4 py-3 text-sm font-semibold text-white hover:bg-green-800 sm:text-base"
+                      className="min-h-[62px] w-full rounded-xl bg-green-700 px-5 py-4 text-base font-semibold text-white hover:bg-green-800"
                       onClick={() =>
                         window.open(
                           publishSuccess.postUrl!,
@@ -968,14 +951,14 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       }
                     >
                       <ExternalLink className="mr-2 h-5 w-5 shrink-0" />
-                      Ver post publicado
+                      Ver publicação
                     </Button>
 
                     <Button
                       type="button"
                       size="lg"
                       variant="outline"
-                      className="min-h-[54px] w-full whitespace-normal rounded-lg border-blue-600 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 sm:text-base"
+                      className="min-h-[62px] w-full rounded-xl border-blue-600 px-5 py-4 text-base font-semibold text-blue-700 hover:bg-blue-50"
                       onClick={() => {
                         const urlToShare =
                           publishSuccess.facebookShareUrl ||
@@ -992,7 +975,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                       }}
                     >
                       <Facebook className="mr-2 h-5 w-5 shrink-0" />
-                      Compartilhar no meu perfil
+                      Compartilhar no Facebook
                     </Button>
                   </>
                 )}
@@ -1001,7 +984,7 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   type="button"
                   size="lg"
                   variant="outline"
-                  className="min-h-[54px] w-full whitespace-normal rounded-lg px-4 py-3 text-sm font-semibold sm:text-base"
+                  className="min-h-[62px] w-full rounded-xl px-5 py-4 text-base font-semibold"
                   onClick={onSuccess}
                 >
                   Voltar ao calendário
@@ -1011,10 +994,10 @@ export function PostForm({ initialData, onSuccess, onCancel }: PostFormProps) {
                   type="button"
                   size="lg"
                   variant="ghost"
-                  className="min-h-[54px] w-full whitespace-normal rounded-lg px-4 py-3 text-sm font-semibold sm:text-base"
+                  className="min-h-[62px] w-full rounded-xl px-5 py-4 text-base font-semibold"
                   onClick={() => setPublishSuccess(null)}
                 >
-                  Continuar nesta tela
+                  Continuar editando
                 </Button>
               </div>
             </div>
