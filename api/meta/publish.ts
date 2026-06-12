@@ -488,12 +488,8 @@ async function createInstagramReelsContainer(params: {
   videoUrl: string;
   caption: string;
 }) {
-  const {
-    instagramBusinessAccountId,
-    pageAccessToken,
-    videoUrl,
-    caption,
-  } = params;
+  const { instagramBusinessAccountId, pageAccessToken, videoUrl, caption } =
+    params;
 
   const url = new URL(
     `https://graph.facebook.com/${META_API_VERSION}/${instagramBusinessAccountId}/media`
@@ -549,6 +545,7 @@ async function publishSingleImageToInstagram(params: {
       ok: false,
       step: "instagram_create_single_image_container",
       creationId: null,
+      childCreationIds: [],
       result: containerResult,
       permalink: null,
     };
@@ -575,6 +572,7 @@ async function publishSingleImageToInstagram(params: {
     ok: publishResult.ok && Boolean(publishResult.data?.id),
     step: "instagram_publish_single_image",
     creationId,
+    childCreationIds: [],
     result: publishResult,
     permalink,
   };
@@ -601,6 +599,7 @@ async function publishReelsToInstagram(params: {
       ok: false,
       step: "instagram_create_reels_container",
       creationId: null,
+      childCreationIds: [],
       waitResult: null,
       result: containerResult,
       permalink: null,
@@ -619,6 +618,7 @@ async function publishReelsToInstagram(params: {
       ok: false,
       step: "instagram_wait_reels_container",
       creationId,
+      childCreationIds: [],
       waitResult,
       result: waitResult.result,
       permalink: null,
@@ -644,6 +644,7 @@ async function publishReelsToInstagram(params: {
     ok: publishResult.ok && Boolean(publishResult.data?.id),
     step: "instagram_publish_reels",
     creationId,
+    childCreationIds: [],
     waitResult,
     result: publishResult,
     permalink,
@@ -1056,13 +1057,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               caption,
             });
 
+        const instagramChildCreationIds = Array.isArray(
+          (instagramResult as any).childCreationIds
+        )
+          ? (instagramResult as any).childCreationIds
+          : [];
+
         postUrls.instagram = instagramResult.permalink;
 
         results.instagram = {
           ok: instagramResult.ok,
           step: instagramResult.step,
           creationId: instagramResult.creationId,
-          childCreationIds: instagramResult.childCreationIds || [],
+          childCreationIds: instagramChildCreationIds,
           status: instagramResult.result.status,
           data: instagramResult.result.data,
           text: instagramResult.result.text,
