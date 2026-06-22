@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CalendarCheck,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -47,7 +48,7 @@ const faq = [
   {
     question: "O Social Pilot PRO publica sozinho?",
     answer:
-      "Sim. Mas precisa da ação do usuário. Toda publicação ou agendamento precisa ser criado e confirmado dentro da plataforma.",
+      "Não. O Social Pilot PRO não publica nada sem ação do usuário. Toda publicação ou agendamento precisa ser criado, configurado e confirmado dentro da plataforma.",
   },
   {
     question: "Para que serve o Social Pilot PRO?",
@@ -66,9 +67,63 @@ const faq = [
   },
 ];
 
+function Reveal({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.unobserve(element);
+        }
+      },
+      { threshold: 0.18 }
+    );
+
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={`transform transition-all duration-700 ease-out ${
+        isVisible ? "translate-y-0 opacity-100" : "translate-y-10 opacity-0"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function Landing() {
+  const [scrollY, setScrollY] = useState(0);
+
   useEffect(() => {
     document.title = "Social Pilot PRO | Crie, agende e publique conteúdos";
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollY(window.scrollY);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   return (
@@ -100,19 +155,29 @@ export default function Landing() {
             <a href="/terms" className="hover:text-blue-600">
               Termos de Uso
             </a>
-            <a
-              href="/login"
-              className="rounded-lg bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
-            >
-              Entrar
-            </a>
+
+            <div className="flex items-center gap-2">
+              <a
+                href="/login"
+                className="rounded-lg border border-slate-300 px-4 py-2 font-bold text-slate-900 hover:border-blue-600 hover:text-blue-600"
+              >
+                Entrar
+              </a>
+
+              <a
+                href="/register"
+                className="rounded-lg bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+              >
+                Cadastre-se
+              </a>
+            </div>
           </nav>
         </div>
       </header>
 
       <section className="bg-gradient-to-b from-blue-50 via-white to-white px-6 py-20 md:py-28">
         <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-[1.05fr_0.95fr] md:items-center">
-          <div>
+          <Reveal>
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700">
               <Sparkles className="h-4 w-4" />
               Plataforma oficial do Social Pilot PRO
@@ -132,11 +197,19 @@ export default function Landing() {
 
             <div className="mt-8 flex flex-wrap gap-3">
               <a
-                href="/login"
+                href="/register"
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-3 font-bold text-white hover:bg-blue-700"
               >
+                <UserPlus className="h-5 w-5" />
+                Cadastre-se grátis
+              </a>
+
+              <a
+                href="/login"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-3 font-bold text-slate-900 hover:border-blue-600 hover:text-blue-600"
+              >
                 <LogIn className="h-5 w-5" />
-                Entrar no Social Pilot PRO
+                Entrar
               </a>
 
               <a
@@ -153,9 +226,12 @@ export default function Landing() {
               revisa, seleciona a conta conectada e confirma a publicação ou o
               agendamento.
             </p>
-          </div>
+          </Reveal>
 
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+          <div
+            className="rounded-lg border border-slate-200 bg-white p-5 shadow-xl transition-transform duration-300"
+            style={{ transform: `translateY(${scrollY * 0.04}px)` }}
+          >
             <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
               <span className="font-bold text-slate-700">Painel de conteúdo</span>
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
@@ -200,7 +276,7 @@ export default function Landing() {
       </section>
 
       <section id="recursos" className="px-6 py-20">
-        <div className="mx-auto max-w-7xl">
+        <Reveal className="mx-auto max-w-7xl">
           <h2 className="text-3xl font-black md:text-4xl">
             O que o Social Pilot PRO faz
           </h2>
@@ -229,11 +305,11 @@ export default function Landing() {
               );
             })}
           </div>
-        </div>
+        </Reveal>
       </section>
 
       <section id="como-funciona" className="bg-slate-50 px-6 py-20">
-        <div className="mx-auto max-w-7xl">
+        <Reveal className="mx-auto max-w-7xl">
           <h2 className="text-3xl font-black md:text-4xl">
             Como funciona o fluxo de publicação
           </h2>
@@ -248,11 +324,11 @@ export default function Landing() {
               </div>
             ))}
           </div>
-        </div>
+        </Reveal>
       </section>
 
       <section className="px-6 py-20">
-        <div className="mx-auto grid max-w-7xl gap-8 md:grid-cols-3">
+        <Reveal className="mx-auto grid max-w-7xl gap-8 md:grid-cols-3">
           <div className="rounded-lg border border-slate-200 p-6">
             <Users className="mb-4 h-7 w-7 text-blue-600" />
             <h3 className="text-xl font-bold">Para criadores e empresas</h3>
@@ -279,11 +355,11 @@ export default function Landing() {
               consulta pública.
             </p>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       <section id="faq" className="bg-slate-50 px-6 py-20">
-        <div className="mx-auto max-w-4xl">
+        <Reveal className="mx-auto max-w-4xl">
           <h2 className="text-3xl font-black md:text-4xl">
             Perguntas frequentes
           </h2>
@@ -301,26 +377,37 @@ export default function Landing() {
               </details>
             ))}
           </div>
-        </div>
+        </Reveal>
       </section>
 
       <section className="px-6 py-20">
-        <div className="mx-auto max-w-7xl rounded-lg bg-slate-950 p-8 text-white md:p-12">
+        <Reveal className="mx-auto max-w-7xl rounded-lg bg-slate-950 p-8 text-white md:p-12">
           <h2 className="text-3xl font-black">
-            Acesse o painel do Social Pilot PRO
+            Comece agora no Social Pilot PRO
           </h2>
           <p className="mt-4 max-w-3xl leading-8 text-slate-300">
-            Entre para criar posts, organizar conteúdos, agendar publicações e
-            publicar conteúdos autorizados em contas conectadas.
+            Cadastre-se para criar posts, organizar conteúdos, agendar
+            publicações e publicar conteúdos autorizados em contas conectadas.
           </p>
-          <a
-            href="/login"
-            className="mt-8 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-3 font-bold text-white hover:bg-blue-700"
-          >
-            <LogIn className="h-5 w-5" />
-            Entrar agora
-          </a>
-        </div>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <a
+              href="/register"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-3 font-bold text-white hover:bg-blue-700"
+            >
+              <UserPlus className="h-5 w-5" />
+              Criar minha conta
+            </a>
+
+            <a
+              href="/login"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-600 px-5 py-3 font-bold text-white hover:border-white"
+            >
+              <LogIn className="h-5 w-5" />
+              Já tenho conta
+            </a>
+          </div>
+        </Reveal>
       </section>
 
       <footer className="border-t border-slate-200 px-6 py-8">
@@ -333,6 +420,9 @@ export default function Landing() {
             </a>
             <a href="/terms" className="hover:text-blue-600">
               Termos de Uso
+            </a>
+            <a href="/register" className="hover:text-blue-600">
+              Cadastre-se
             </a>
             <a href="/login" className="hover:text-blue-600">
               Entrar
