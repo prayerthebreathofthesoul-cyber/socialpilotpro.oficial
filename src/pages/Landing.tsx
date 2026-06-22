@@ -47,7 +47,7 @@ const faq = [
   {
     question: "O Social Pilot PRO publica sozinho?",
     answer:
-      "Não. O sistema não publica nada sem ação do usuário. Toda publicação ou agendamento precisa ser criado e confirmado dentro da plataforma.",
+      "Sim. Mas precisa da ação do usuário. Toda publicação ou agendamento precisa ser criado e confirmado dentro da plataforma.",
   },
   {
     question: "Para que serve o Social Pilot PRO?",
@@ -76,9 +76,11 @@ export default function Landing() {
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-4 md:flex-row md:items-center md:justify-between">
           <a href="/" className="flex items-center gap-3 text-lg font-black">
-            <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600 text-white">
-              SP
-            </span>
+            <img
+              src="/ícone_social_pilotpro.png"
+              alt="Logo oficial do Social Pilot PRO"
+              className="h-12 w-12 rounded-lg object-cover"
+            />
             <span>Social Pilot PRO</span>
           </a>
 
