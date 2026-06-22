@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
+import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
@@ -25,6 +26,8 @@ const queryClient = new QueryClient();
 function Router() {
   return (
     <Switch>
+      <Route path="/" component={Landing} />
+
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
 
@@ -44,7 +47,6 @@ function Router() {
       <Route path="/plans" component={Plans} />
       <Route path="/master" component={Master} />
 
-      <Route path="/" component={Dashboard} />
       <Route component={NotFound} />
     </Switch>
   );
