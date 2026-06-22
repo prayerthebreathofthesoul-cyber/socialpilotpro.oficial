@@ -11,4 +11,22 @@ if (!supabaseAnonKey) {
   throw new Error("VITE_SUPABASE_ANON_KEY não foi configurada.");
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (supabaseAnonKey.toLowerCase().includes("service_role")) {
+  throw new Error(
+    "A chave service_role não pode ser usada no frontend. Use apenas a anon key."
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: "socialpilotpro.auth",
+  },
+  global: {
+    headers: {
+      "X-Client-Info": "socialpilotpro-web",
+    },
+  },
+});
