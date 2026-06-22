@@ -23,7 +23,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2 } from "lucide-react";
+import { Loader2, Home, UserPlus } from "lucide-react";
 
 const loginSchema = z.object({
   email: z
@@ -70,107 +70,144 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-muted/50 p-4">
-      <Card className="w-full max-w-md shadow-lg border-primary/10">
-        <CardHeader className="space-y-1 text-center">
-          <div className="mx-auto mb-4 flex justify-center">
+    <div className="min-h-screen bg-muted/50">
+      <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-4 md:flex-row md:items-center md:justify-between">
+          <Link href="/" className="flex items-center gap-3 text-lg font-black">
             <img
               src="/ícone_social_pilotpro.png"
               alt="Logo oficial do Social Pilot PRO"
-              className="h-20 w-20 rounded-2xl object-cover shadow-sm"
+              className="h-12 w-12 rounded-lg object-cover shadow-sm"
             />
-          </div>
+            <span>Social Pilot PRO</span>
+          </Link>
 
-          <CardTitle className="text-2xl font-bold tracking-tight">
-            Bem-vindo de volta
-          </CardTitle>
+          <nav className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" asChild>
+              <Link href="/" className="inline-flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                Home
+              </Link>
+            </Button>
 
-          <CardDescription>Entre na sua conta Social Pilot PRO</CardDescription>
-        </CardHeader>
+            <Button variant="outline" asChild>
+              <Link href="/register" className="inline-flex items-center gap-2">
+                <UserPlus className="h-4 w-4" />
+                Cadastre-se
+              </Link>
+            </Button>
+          </nav>
+        </div>
+      </header>
 
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>E-mail</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="seu@email.com"
-                        type="email"
-                        autoComplete="email"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+      <main className="flex w-full items-center justify-center p-4 py-10">
+        <Card className="w-full max-w-md shadow-lg border-primary/10">
+          <CardHeader className="space-y-1 text-center">
+            <div className="mx-auto mb-4 flex justify-center">
+              <img
+                src="/ícone_social_pilotpro.png"
+                alt="Logo oficial do Social Pilot PRO"
+                className="h-20 w-20 rounded-2xl object-cover shadow-sm"
               />
+            </div>
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center justify-between">
-                      <FormLabel>Senha</FormLabel>
+            <CardTitle className="text-2xl font-bold tracking-tight">
+              Bem-vindo de volta
+            </CardTitle>
 
-                      <button
-                        type="button"
-                        className="text-sm font-medium text-primary hover:underline"
-                        onClick={() =>
-                          toast.info(
-                            "A recuperação de senha será configurada no próximo passo."
-                          )
-                        }
-                      >
-                        Esqueci minha senha
-                      </button>
-                    </div>
+            <CardDescription>
+              Entre na sua conta Social Pilot PRO
+            </CardDescription>
+          </CardHeader>
 
-                    <FormControl>
-                      <Input
-                        placeholder="******"
-                        type="password"
-                        autoComplete="current-password"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>E-mail</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="seu@email.com"
+                          type="email"
+                          autoComplete="email"
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Senha</FormLabel>
 
-              <Button type="submit" className="w-full mt-6" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Entrando...
-                  </>
-                ) : (
-                  "Entrar"
-                )}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-primary hover:underline"
+                          onClick={() =>
+                            toast.info(
+                              "A recuperação de senha será configurada no próximo passo."
+                            )
+                          }
+                        >
+                          Esqueci minha senha
+                        </button>
+                      </div>
 
-        <CardFooter className="flex flex-col gap-4 items-center justify-center border-t p-6">
-          <div className="text-sm text-muted-foreground text-center">
-            Ainda não tem uma conta?
-          </div>
+                      <FormControl>
+                        <Input
+                          placeholder="******"
+                          type="password"
+                          autoComplete="current-password"
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
 
-          <Button variant="outline" className="w-full" asChild>
-            <Link href="/register">Cadastrar-se</Link>
-          </Button>
-        </CardFooter>
-      </Card>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Button
+                  type="submit"
+                  className="w-full mt-6"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Entrando...
+                    </>
+                  ) : (
+                    "Entrar"
+                  )}
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+
+          <CardFooter className="flex flex-col gap-4 items-center justify-center border-t p-6">
+            <div className="text-sm text-muted-foreground text-center">
+              Ainda não tem uma conta?
+            </div>
+
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/register">Cadastrar-se</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </main>
     </div>
   );
 }
