@@ -27,149 +27,9 @@ import { Eye, EyeOff, Home, Loader2, LogIn } from "lucide-react";
 
 const USER_EMAIL_KEY = "socialpilot_user_email";
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
-const STORES_KEY = "socialpilot_demo_stores";
-
-type DocumentType = "cpf" | "cnpj";
-
-type StorePlan = "free" | "premium";
-type StorePlanStatus = "active" | "blocked" | "cancelled";
-
-type StoreRecord = {
-  id: number;
-  name: string;
-  email?: string | null;
-  ownerName?: string | null;
-  segment?: string | null;
-  cnpj?: string | null;
-  documentType?: DocumentType;
-  documentNumber?: string | null;
-  instagramConnected?: boolean;
-  facebookConnected?: boolean;
-  tiktokConnected?: boolean;
-  plan?: StorePlan;
-  planStatus?: StorePlanStatus;
-  postsLimit?: number | null;
-  postsUsed?: number;
-  createdAt?: string;
-  isMaster?: boolean;
-};
-
-function onlyNumbers(value: string) {
-  return value.replace(/\D/g, "");
-}
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
-}
-
-function normalizeDocument(value?: string) {
-  return onlyNumbers(value || "");
-}
-
-function formatCpfCnpj(value: string, type: DocumentType) {
-  const numbers = onlyNumbers(value);
-
-  if (type === "cpf") {
-    return numbers
-      .slice(0, 11)
-      .replace(/^(\d{3})(\d)/, "$1.$2")
-      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-      .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-  }
-
-  return numbers
-    .slice(0, 14)
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3/$4")
-    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
-}
-
-function getStoredStores(): StoreRecord[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const raw = localStorage.getItem(STORES_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed;
-  } catch {
-    return [];
-  }
-}
-
-function saveStoredStores(stores: StoreRecord[]) {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem(STORES_KEY, JSON.stringify(stores));
-}
-
-function documentAlreadyExists(documentNumber: string) {
-  const cleanDocument = normalizeDocument(documentNumber);
-
-  if (!cleanDocument) return false;
-
-  const stores = getStoredStores();
-
-  return stores.some((store) => {
-    const savedDocument =
-      normalizeDocument(store.documentNumber || "") ||
-      normalizeDocument(store.cnpj || "");
-
-    return savedDocument === cleanDocument;
-  });
-}
-
-function emailAlreadyExists(email: string) {
-  const cleanEmail = normalizeEmail(email);
-
-  const stores = getStoredStores();
-
-  return stores.some((store) => {
-    return normalizeEmail(store.email || "") === cleanEmail;
-  });
-}
-
-function createStoreForMaster(values: {
-  name: string;
-  email: string;
-  documentType: DocumentType;
-  documentNumber: string;
-}) {
-  const stores = getStoredStores();
-
-  const nextId =
-    Math.max(0, ...stores.map((store) => Number(store.id) || 0)) + 1;
-
-  const cleanDocument = normalizeDocument(values.documentNumber);
-  const cleanEmail = normalizeEmail(values.email);
-
-  const newStore: StoreRecord = {
-    id: nextId,
-    name: values.name,
-    email: cleanEmail,
-    ownerName: values.name,
-    segment: "Não informado",
-    cnpj: cleanDocument,
-    documentType: values.documentType,
-    documentNumber: cleanDocument,
-    instagramConnected: false,
-    facebookConnected: false,
-    tiktokConnected: false,
-    plan: "free",
-    planStatus: "active",
-    postsLimit: 15,
-    postsUsed: 0,
-    createdAt: new Date().toISOString(),
-    isMaster: false,
-  };
-
-  saveStoredStores([...stores, newStore]);
-
-  return newStore;
 }
 
 const registerSchema = z
@@ -183,37 +43,16 @@ const registerSchema = z
       .min(1, { message: "Informe seu e-mail" })
       .email({ message: "Informe um e-mail válido" }),
 
-    documentType: z.enum(["cpf", "cnpj"]),
-
-    documentNumber: z
-      .string()
-      .min(1, { message: "Informe o CPF ou CNPJ" }),
-
     password: z
       .string()
-      .min(6, { message: "A senha precisa ter pelo menos 6 caracteres" }),
+      .min(8, { message: "A senha precisa ter pelo menos 8 caracteres" }),
 
     confirmPassword: z.string().min(1, { message: "Confirme a senha" }),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "As senhas não coincidem",
     path: ["confirmPassword"],
-  })
-  .refine(
-    (data) => {
-      const document = normalizeDocument(data.documentNumber);
-
-      if (data.documentType === "cpf") {
-        return document.length === 11;
-      }
-
-      return document.length === 14;
-    },
-    {
-      message: "Informe um CPF ou CNPJ válido",
-      path: ["documentNumber"],
-    }
-  );
+  });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
@@ -228,58 +67,26 @@ export default function Register() {
     defaultValues: {
       name: "",
       email: "",
-      documentType: "cnpj",
-      documentNumber: "",
       password: "",
       confirmPassword: "",
     },
   });
-
-  const documentType = form.watch("documentType");
 
   const onSubmit = async (values: RegisterFormValues) => {
     setIsLoading(true);
 
     try {
       const cleanEmail = normalizeEmail(values.email);
-      const cleanDocument = normalizeDocument(values.documentNumber);
-
-      if (emailAlreadyExists(cleanEmail)) {
-        toast.error("Este e-mail já está cadastrado. Faça login ou use outro e-mail.");
-        setIsLoading(false);
-        return;
-      }
-
-      if (documentAlreadyExists(cleanDocument)) {
-        toast.error(
-          values.documentType === "cpf"
-            ? "Já existe uma conta cadastrada com este CPF."
-            : "Já existe uma conta cadastrada com este CNPJ."
-        );
-
-        setIsLoading(false);
-        return;
-      }
+      const cleanName = values.name.trim();
 
       await signUpWithEmail(cleanEmail, values.password, {
-        name: values.name,
-        companyName: values.name,
-        documentType: values.documentType,
-        documentNumber: cleanDocument,
-        cpf: values.documentType === "cpf" ? cleanDocument : "",
-        cnpj: values.documentType === "cnpj" ? cleanDocument : cleanDocument,
+        name: cleanName,
+        companyName: cleanName,
         plan: "free",
         planStatus: "active",
         postsUsed: 0,
         postsLimit: 15,
       } as any);
-
-      createStoreForMaster({
-        name: values.name,
-        email: cleanEmail,
-        documentType: values.documentType,
-        documentNumber: cleanDocument,
-      });
 
       localStorage.setItem(USER_EMAIL_KEY, cleanEmail);
       localStorage.removeItem(MASTER_ACCESS_KEY);
@@ -360,19 +167,11 @@ export default function Register() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
-                        {documentType === "cpf"
-                          ? "Nome Completo"
-                          : "Nome da Empresa"}
-                      </FormLabel>
+                      <FormLabel>Nome da empresa ou responsável</FormLabel>
 
                       <FormControl>
                         <Input
-                          placeholder={
-                            documentType === "cpf"
-                              ? "Seu nome completo"
-                              : "Minha Empresa"
-                          }
+                          placeholder="Minha Empresa"
                           autoComplete="organization"
                           disabled={isLoading}
                           {...field}
@@ -409,69 +208,6 @@ export default function Register() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
-                    name="documentType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tipo de Cadastro</FormLabel>
-
-                        <FormControl>
-                          <select
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                            disabled={isLoading}
-                            value={field.value}
-                            onChange={(event) => {
-                              field.onChange(event.target.value);
-                              form.setValue("documentNumber", "");
-                            }}
-                          >
-                            <option value="cnpj">Pessoa Jurídica - CNPJ</option>
-                            <option value="cpf">Pessoa Física - CPF</option>
-                          </select>
-                        </FormControl>
-
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="documentNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {documentType === "cpf" ? "CPF" : "CNPJ"}
-                        </FormLabel>
-
-                        <FormControl>
-                          <Input
-                            placeholder={
-                              documentType === "cpf"
-                                ? "000.000.000-00"
-                                : "00.000.000/0000-00"
-                            }
-                            disabled={isLoading}
-                            value={field.value}
-                            onChange={(event) => {
-                              const formatted = formatCpfCnpj(
-                                event.target.value,
-                                documentType
-                              );
-
-                              field.onChange(formatted);
-                            }}
-                          />
-                        </FormControl>
-
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
                     name="password"
                     render={({ field }) => (
                       <FormItem>
@@ -480,7 +216,7 @@ export default function Register() {
                         <FormControl>
                           <div className="relative">
                             <Input
-                              placeholder="******"
+                              placeholder="********"
                               type={showPassword ? "text" : "password"}
                               autoComplete="new-password"
                               disabled={isLoading}
@@ -520,7 +256,7 @@ export default function Register() {
                         <FormControl>
                           <div className="relative">
                             <Input
-                              placeholder="******"
+                              placeholder="********"
                               type={showConfirmPassword ? "text" : "password"}
                               autoComplete="new-password"
                               disabled={isLoading}
@@ -555,7 +291,11 @@ export default function Register() {
                   />
                 </div>
 
-                <Button type="submit" className="w-full mt-6" disabled={isLoading}>
+                <Button
+                  type="submit"
+                  className="w-full mt-6"
+                  disabled={isLoading}
+                >
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
