@@ -960,11 +960,16 @@ export default function Settings() {
                       type="button"
                       className="w-full bg-orange-600 hover:bg-orange-700 text-white"
                       disabled={company?.plan === "premium"}
-                      onClick={() =>
-                        toast.info(
-                          "A cobrança real será configurada depois com o sistema de pagamentos."
-                        )
-                      }
+                      onClick={() => {
+                        const message = encodeURIComponent(
+                          "Olá! Quero fazer upgrade para o plano Premium do SocialPilot Pro."
+                        );
+
+                        window.open(
+                          `https://wa.me/5592993911262?text=${message}`,
+                          "_blank"
+                        );
+                      }}
                     >
                       {company?.plan === "premium"
                         ? "Gerenciar Assinatura"
