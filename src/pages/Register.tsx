@@ -23,7 +23,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Home, Loader2, LogIn } from "lucide-react";
 
 const USER_EMAIL_KEY = "socialpilot_user_email";
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
@@ -90,11 +90,9 @@ function getStoredStores(): StoreRecord[] {
 
   try {
     const raw = localStorage.getItem(STORES_KEY);
-
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
-
     if (!Array.isArray(parsed)) return [];
 
     return parsed;
@@ -222,6 +220,8 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function Register() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -301,155 +301,79 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-muted/50 p-4 py-12">
-      <Card className="w-full max-w-lg shadow-lg border-primary/10">
-        <CardHeader className="space-y-1 text-center">
-          <div className="w-12 h-12 bg-primary rounded-lg mx-auto mb-4 flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-xl">
-              SP
-            </span>
-          </div>
+    <div className="min-h-screen bg-muted/50">
+      <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-4 md:flex-row md:items-center md:justify-between">
+          <Link href="/" className="flex items-center gap-3 text-lg font-black">
+            <img
+              src="/ícone_social_pilotpro.png"
+              alt="Logo oficial do Social Pilot PRO"
+              className="h-12 w-12 rounded-lg object-cover shadow-sm"
+            />
+            <span>Social Pilot PRO</span>
+          </Link>
 
-          <CardTitle className="text-2xl font-bold tracking-tight">
-            Criar uma conta
-          </CardTitle>
+          <nav className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" asChild>
+              <Link href="/" className="inline-flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                Home
+              </Link>
+            </Button>
 
-          <CardDescription>
-            Configure sua conta para começar a organizar seus posts com o
-            SocialPilot Pro
-          </CardDescription>
-        </CardHeader>
+            <Button variant="outline" asChild>
+              <Link href="/login" className="inline-flex items-center gap-2">
+                <LogIn className="h-4 w-4" />
+                Entrar
+              </Link>
+            </Button>
+          </nav>
+        </div>
+      </header>
 
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {documentType === "cpf"
-                        ? "Nome Completo"
-                        : "Nome da Empresa"}
-                    </FormLabel>
-
-                    <FormControl>
-                      <Input
-                        placeholder={
-                          documentType === "cpf"
-                            ? "Seu nome completo"
-                            : "Minha Empresa"
-                        }
-                        autoComplete="organization"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-
-                    <FormMessage />
-                  </FormItem>
-                )}
+      <main className="flex w-full items-center justify-center p-4 py-10">
+        <Card className="w-full max-w-lg shadow-lg border-primary/10">
+          <CardHeader className="space-y-1 text-center">
+            <div className="mx-auto mb-4 flex justify-center">
+              <img
+                src="/ícone_social_pilotpro.png"
+                alt="Logo oficial do Social Pilot PRO"
+                className="h-20 w-20 rounded-2xl object-cover shadow-sm"
               />
+            </div>
 
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>E-mail</FormLabel>
+            <CardTitle className="text-2xl font-bold tracking-tight">
+              Criar uma conta
+            </CardTitle>
 
-                    <FormControl>
-                      <Input
-                        placeholder="seu@email.com"
-                        type="email"
-                        autoComplete="email"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
+            <CardDescription>
+              Configure sua conta para começar a organizar seus posts com o
+              Social Pilot PRO
+            </CardDescription>
+          </CardHeader>
 
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
-                  name="documentType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tipo de Cadastro</FormLabel>
-
-                      <FormControl>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                          disabled={isLoading}
-                          value={field.value}
-                          onChange={(event) => {
-                            field.onChange(event);
-                            form.setValue("documentNumber", "");
-                          }}
-                        >
-                          <option value="cnpj">Pessoa Jurídica - CNPJ</option>
-                          <option value="cpf">Pessoa Física - CPF</option>
-                        </select>
-                      </FormControl>
-
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="documentNumber"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        {documentType === "cpf" ? "CPF" : "CNPJ"}
+                        {documentType === "cpf"
+                          ? "Nome Completo"
+                          : "Nome da Empresa"}
                       </FormLabel>
 
                       <FormControl>
                         <Input
                           placeholder={
                             documentType === "cpf"
-                              ? "000.000.000-00"
-                              : "00.000.000/0000-00"
+                              ? "Seu nome completo"
+                              : "Minha Empresa"
                           }
-                          disabled={isLoading}
-                          value={field.value}
-                          onChange={(event) => {
-                            const formatted = formatCpfCnpj(
-                              event.target.value,
-                              documentType
-                            );
-
-                            field.onChange(formatted);
-                          }}
-                        />
-                      </FormControl>
-
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Senha</FormLabel>
-
-                      <FormControl>
-                        <Input
-                          placeholder="******"
-                          type="password"
-                          autoComplete="new-password"
+                          autoComplete="organization"
                           disabled={isLoading}
                           {...field}
                         />
@@ -462,16 +386,16 @@ export default function Register() {
 
                 <FormField
                   control={form.control}
-                  name="confirmPassword"
+                  name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Confirmar Senha</FormLabel>
+                      <FormLabel>E-mail</FormLabel>
 
                       <FormControl>
                         <Input
-                          placeholder="******"
-                          type="password"
-                          autoComplete="new-password"
+                          placeholder="seu@email.com"
+                          type="email"
+                          autoComplete="email"
                           disabled={isLoading}
                           {...field}
                         />
@@ -481,32 +405,181 @@ export default function Register() {
                     </FormItem>
                   )}
                 />
-              </div>
 
-              <Button type="submit" className="w-full mt-6" disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Criando conta...
-                  </>
-                ) : (
-                  "Criar Conta"
-                )}
-              </Button>
-            </form>
-          </Form>
-        </CardContent>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="documentType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tipo de Cadastro</FormLabel>
 
-        <CardFooter className="flex flex-col gap-4 items-center justify-center border-t p-6">
-          <div className="text-sm text-muted-foreground text-center">
-            Já tem uma conta?
-          </div>
+                        <FormControl>
+                          <select
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            disabled={isLoading}
+                            value={field.value}
+                            onChange={(event) => {
+                              field.onChange(event.target.value);
+                              form.setValue("documentNumber", "");
+                            }}
+                          >
+                            <option value="cnpj">Pessoa Jurídica - CNPJ</option>
+                            <option value="cpf">Pessoa Física - CPF</option>
+                          </select>
+                        </FormControl>
 
-          <Button variant="outline" className="w-full" asChild>
-            <Link href="/login">Fazer Login</Link>
-          </Button>
-        </CardFooter>
-      </Card>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="documentNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {documentType === "cpf" ? "CPF" : "CNPJ"}
+                        </FormLabel>
+
+                        <FormControl>
+                          <Input
+                            placeholder={
+                              documentType === "cpf"
+                                ? "000.000.000-00"
+                                : "00.000.000/0000-00"
+                            }
+                            disabled={isLoading}
+                            value={field.value}
+                            onChange={(event) => {
+                              const formatted = formatCpfCnpj(
+                                event.target.value,
+                                documentType
+                              );
+
+                              field.onChange(formatted);
+                            }}
+                          />
+                        </FormControl>
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Senha</FormLabel>
+
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              placeholder="******"
+                              type={showPassword ? "text" : "password"}
+                              autoComplete="new-password"
+                              disabled={isLoading}
+                              className="pr-10"
+                              {...field}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword((value) => !value)}
+                              className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-900"
+                              aria-label={
+                                showPassword ? "Ocultar senha" : "Mostrar senha"
+                              }
+                            >
+                              {showPassword ? (
+                                <EyeOff className="h-5 w-5" />
+                              ) : (
+                                <Eye className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
+                        </FormControl>
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="confirmPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Confirmar Senha</FormLabel>
+
+                        <FormControl>
+                          <div className="relative">
+                            <Input
+                              placeholder="******"
+                              type={showConfirmPassword ? "text" : "password"}
+                              autoComplete="new-password"
+                              disabled={isLoading}
+                              className="pr-10"
+                              {...field}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setShowConfirmPassword((value) => !value)
+                              }
+                              className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-900"
+                              aria-label={
+                                showConfirmPassword
+                                  ? "Ocultar confirmação de senha"
+                                  : "Mostrar confirmação de senha"
+                              }
+                            >
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-5 w-5" />
+                              ) : (
+                                <Eye className="h-5 w-5" />
+                              )}
+                            </button>
+                          </div>
+                        </FormControl>
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Button type="submit" className="w-full mt-6" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Criando conta...
+                    </>
+                  ) : (
+                    "Criar Conta"
+                  )}
+                </Button>
+              </form>
+            </Form>
+          </CardContent>
+
+          <CardFooter className="flex flex-col gap-4 items-center justify-center border-t p-6">
+            <div className="text-sm text-muted-foreground text-center">
+              Já tem uma conta?
+            </div>
+
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/login">Fazer Login</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </main>
     </div>
   );
 }
