@@ -51,11 +51,6 @@ export default function Login() {
     try {
       await signInWithEmail(values.email, values.password);
 
-      /**
-       * CORREÇÃO:
-       * Salva o e-mail do usuário logado no localStorage.
-       * A Sidebar usa esse e-mail para identificar se deve mostrar o menu Planos.
-       */
       localStorage.setItem("socialpilot_user_email", values.email);
 
       toast.success("Login realizado com sucesso!");
@@ -78,19 +73,19 @@ export default function Login() {
     <div className="min-h-screen w-full flex items-center justify-center bg-muted/50 p-4">
       <Card className="w-full max-w-md shadow-lg border-primary/10">
         <CardHeader className="space-y-1 text-center">
-          <div className="w-12 h-12 bg-primary rounded-lg mx-auto mb-4 flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-xl">
-              SP
-            </span>
+          <div className="mx-auto mb-4 flex justify-center">
+            <img
+              src="/ícone_social_pilotpro.png"
+              alt="Logo oficial do Social Pilot PRO"
+              className="h-20 w-20 rounded-2xl object-cover shadow-sm"
+            />
           </div>
 
           <CardTitle className="text-2xl font-bold tracking-tight">
             Bem-vindo de volta
           </CardTitle>
 
-          <CardDescription>
-            Entre na sua conta SocialPilot Pro
-          </CardDescription>
+          <CardDescription>Entre na sua conta Social Pilot PRO</CardDescription>
         </CardHeader>
 
         <CardContent>
