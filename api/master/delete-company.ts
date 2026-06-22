@@ -1,38 +1,43 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl =
-  process.env.SUPABASE_URL ||
-  process.env.VITE_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL;
-
-const serviceRoleKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE;
-
-const officialEmail =
-  process.env.MASTER_OFFICIAL_EMAIL || "socialpilotpro.oficial@gmail.com";
-
-function json(res: any, status: number, body: Record<string, unknown>) {
-  return res.status(status).json(body);
+function sendJson(res: any, status: number, body: Record<string, unknown>) {
+  res.status(status).json(body);
 }
 
 function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
+function getEnv(name: string) {
+  return String(process.env[name] || "").trim();
+}
+
 function getBearerToken(req: any) {
-  const authorization = req.headers.authorization || "";
+  const authorization = String(req.headers?.authorization || "");
   const [scheme, token] = authorization.split(" ");
 
   if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
+    return "";
   }
 
   return token;
 }
 
-function isMissingRelationError(error: any) {
+function getBody(req: any) {
+  if (!req.body) return {};
+
+  if (typeof req.body === "string") {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  }
+
+  return req.body;
+}
+
+function isIgnorableSupabaseError(error: any) {
   const code = String(error?.code || "");
   const message = String(error?.message || "").toLowerCase();
 
@@ -40,155 +45,168 @@ function isMissingRelationError(error: any) {
     code === "42P01" ||
     code === "42703" ||
     message.includes("does not exist") ||
-    message.includes("schema cache")
+    message.includes("schema cache") ||
+    message.includes("could not find")
   );
 }
 
-async function deleteFromTable(
-  supabaseAdmin: ReturnType<typeof createClient>,
+async function deleteByCompanyId(
+  supabaseAdmin: any,
   table: string,
-  column: string,
-  value: string
+  companyId: string
 ) {
-  const { error } = await supabaseAdmin.from(table).delete().eq(column, value);
+  const { error } = await supabaseAdmin
+    .from(table)
+    .delete()
+    .eq("company_id", companyId);
 
-  if (error && !isMissingRelationError(error)) {
-    throw error;
+  if (error && !isIgnorableSupabaseError(error)) {
+    throw new Error(`Erro ao limpar ${table}: ${error.message}`);
   }
 }
 
 export default async function handler(req: any, res: any) {
-  res.setHeader("Content-Type", "application/json");
+  try {
+    res.setHeader("Content-Type", "application/json");
 
-  if (req.method !== "POST") {
-    return json(res, 405, { error: "Método não permitido." });
-  }
+    if (req.method !== "POST") {
+      return sendJson(res, 405, {
+        error: "Método não permitido.",
+      });
+    }
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return json(res, 500, {
-      error:
-        "Servidor sem SUPABASE_URL/VITE_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY configurado.",
+    const supabaseUrl =
+      getEnv("SUPABASE_URL") ||
+      getEnv("VITE_SUPABASE_URL") ||
+      getEnv("NEXT_PUBLIC_SUPABASE_URL");
+
+    const serviceRoleKey =
+      getEnv("SUPABASE_SERVICE_ROLE_KEY") ||
+      getEnv("SUPABASE_SERVICE_KEY") ||
+      getEnv("SUPABASE_SERVICE_ROLE");
+
+    const officialEmail =
+      getEnv("MASTER_OFFICIAL_EMAIL") || "socialpilotpro.oficial@gmail.com";
+
+    if (!supabaseUrl) {
+      return sendJson(res, 500, {
+        error:
+          "Falta configurar SUPABASE_URL ou VITE_SUPABASE_URL nas variáveis da Vercel.",
+      });
+    }
+
+    if (!serviceRoleKey) {
+      return sendJson(res, 500, {
+        error:
+          "Falta configurar SUPABASE_SERVICE_ROLE_KEY nas variáveis da Vercel.",
+      });
+    }
+
+    const token = getBearerToken(req);
+
+    if (!token) {
+      return sendJson(res, 401, {
+        error: "Sessão inválida ou expirada. Faça login novamente.",
+      });
+    }
+
+    const body = getBody(req);
+
+    const companyId = String(body.companyId || "").trim();
+    let userId = String(body.userId || "").trim();
+    const requestedEmail = normalizeEmail(body.email);
+    const requestedOfficial = body.isOfficial === true;
+
+    if (!companyId) {
+      return sendJson(res, 400, {
+        error: "companyId é obrigatório.",
+      });
+    }
+
+    if (requestedOfficial || requestedEmail === normalizeEmail(officialEmail)) {
+      return sendJson(res, 403, {
+        error: "A conta oficial não pode ser excluída.",
+      });
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     });
-  }
 
-  const token = getBearerToken(req);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAdmin.auth.getUser(token);
 
-  if (!token) {
-    return json(res, 401, { error: "Sessão inválida ou expirada." });
-  }
+    if (authError || !user) {
+      return sendJson(res, 401, {
+        error: "Sessão inválida ou expirada. Entre novamente no painel master.",
+        detalhe: authError?.message || null,
+      });
+    }
 
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+    if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
+      return sendJson(res, 403, {
+        error: "Somente a conta oficial pode excluir empresas.",
+        usuarioLogado: user.email || null,
+        contaPermitida: officialEmail,
+      });
+    }
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabaseAdmin.auth.getUser(token);
-
-  if (userError || !user) {
-    return json(res, 401, { error: "Sessão inválida ou expirada." });
-  }
-
-  if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
-    return json(res, 403, {
-      error: "Somente a conta oficial pode excluir empresas.",
-    });
-  }
-
-  const companyId = String(req.body?.companyId || "").trim();
-  let userId = String(req.body?.userId || "").trim();
-  const requestedEmail = normalizeEmail(req.body?.email);
-  const isOfficial = req.body?.isOfficial === true;
-
-  if (!companyId) {
-    return json(res, 400, { error: "companyId é obrigatório." });
-  }
-
-  if (isOfficial || requestedEmail === normalizeEmail(officialEmail)) {
-    return json(res, 403, {
-      error: "A conta oficial não pode ser excluída.",
-    });
-  }
-
-  const { data: company, error: companyError } = await supabaseAdmin
-    .from("companies")
-    .select("*")
-    .eq("id", companyId)
-    .maybeSingle();
-
-  if (companyError) {
-    return json(res, 500, { error: companyError.message });
-  }
-
-  if (!company) {
-    return json(res, 404, { error: "Empresa não encontrada." });
-  }
-
-  if (normalizeEmail(company.email) === normalizeEmail(officialEmail)) {
-    return json(res, 403, {
-      error: "A conta oficial não pode ser excluída.",
-    });
-  }
-
-  if (!userId && company.user_id) {
-    userId = String(company.user_id);
-  }
-
-  if (!userId) {
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("user_id")
-      .eq("company_id", companyId)
+    const { data: company, error: companyError } = await supabaseAdmin
+      .from("companies")
+      .select("*")
+      .eq("id", companyId)
       .maybeSingle();
 
-    if (profileError && !isMissingRelationError(profileError)) {
-      return json(res, 500, { error: profileError.message });
+    if (companyError) {
+      return sendJson(res, 500, {
+        error: `Erro ao buscar empresa: ${companyError.message}`,
+      });
     }
 
-    if (profile?.user_id) {
-      userId = String(profile.user_id);
+    if (!company) {
+      return sendJson(res, 404, {
+        error: "Empresa não encontrada.",
+      });
     }
-  }
 
-  try {
-    await deleteFromTable(
-      supabaseAdmin,
-      "social_accounts",
-      "company_id",
-      companyId
-    );
+    if (normalizeEmail(company.email) === normalizeEmail(officialEmail)) {
+      return sendJson(res, 403, {
+        error: "A conta oficial não pode ser excluída.",
+      });
+    }
 
-    await deleteFromTable(
-      supabaseAdmin,
-      "scheduled_posts",
-      "company_id",
-      companyId
-    );
+    if (!userId && company.user_id) {
+      userId = String(company.user_id);
+    }
 
-    await deleteFromTable(
-      supabaseAdmin,
-      "posts",
-      "company_id",
-      companyId
-    );
+    if (!userId) {
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("user_id")
+        .eq("company_id", companyId)
+        .maybeSingle();
 
-    await deleteFromTable(
-      supabaseAdmin,
-      "post_media",
-      "company_id",
-      companyId
-    );
+      if (profileError && !isIgnorableSupabaseError(profileError)) {
+        return sendJson(res, 500, {
+          error: `Erro ao buscar perfil: ${profileError.message}`,
+        });
+      }
 
-    await deleteFromTable(
-      supabaseAdmin,
-      "profiles",
-      "company_id",
-      companyId
-    );
+      if (profile?.user_id) {
+        userId = String(profile.user_id);
+      }
+    }
+
+    await deleteByCompanyId(supabaseAdmin, "social_accounts", companyId);
+    await deleteByCompanyId(supabaseAdmin, "scheduled_posts", companyId);
+    await deleteByCompanyId(supabaseAdmin, "posts", companyId);
+    await deleteByCompanyId(supabaseAdmin, "post_media", companyId);
+    await deleteByCompanyId(supabaseAdmin, "profiles", companyId);
 
     const { error: deleteCompanyError } = await supabaseAdmin
       .from("companies")
@@ -196,7 +214,9 @@ export default async function handler(req: any, res: any) {
       .eq("id", companyId);
 
     if (deleteCompanyError) {
-      throw deleteCompanyError;
+      return sendJson(res, 500, {
+        error: `Erro ao excluir empresa: ${deleteCompanyError.message}`,
+      });
     }
 
     if (userId) {
@@ -204,20 +224,28 @@ export default async function handler(req: any, res: any) {
         await supabaseAdmin.auth.admin.deleteUser(userId);
 
       if (deleteUserError) {
-        throw deleteUserError;
+        return sendJson(res, 500, {
+          error:
+            "A empresa foi excluída, mas houve erro ao excluir o usuário do Auth.",
+          detalhe: deleteUserError.message,
+          deletedCompanyId: companyId,
+          userId,
+        });
       }
     }
 
-    return json(res, 200, {
+    return sendJson(res, 200, {
       ok: true,
+      message: "Empresa excluída com sucesso.",
       deletedCompanyId: companyId,
       deletedUserId: userId || null,
     });
   } catch (error: any) {
-    console.error("Erro ao excluir empresa:", error);
+    console.error("Erro fatal em delete-company:", error);
 
-    return json(res, 500, {
-      error: error?.message || "Erro ao excluir empresa.",
+    return sendJson(res, 500, {
+      error: "Erro interno ao excluir empresa.",
+      detalhe: error?.message || String(error),
     });
   }
 }
