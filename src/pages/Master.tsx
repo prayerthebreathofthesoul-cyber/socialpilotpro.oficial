@@ -108,35 +108,81 @@ function normalizeStore(store: MasterStore): MasterStore {
 }
 
 function getStoreMergeKey(store: MasterStore) {
-  const companyId = getStoreCompanyId(store);
   const email = normalizeEmail(store.email);
+  const documentNumber = normalizeText(
+    store.documentNumber || store.cnpj || store.cpf
+  );
+  const companyId = getStoreCompanyId(store);
 
-  if (companyId) return `company:${companyId}`;
   if (email) return `email:${email}`;
+  if (documentNumber) return `document:${documentNumber}`;
+  if (companyId) return `company:${companyId}`;
   return `id:${String(store.id)}`;
 }
 
-function mergeStores(mockStores: MasterStore[], supabaseStores: MasterStore[]) {
+function mergeStoreData(current: MasterStore, next: MasterStore): MasterStore {
+  const currentIsPremium = current.plan === "premium";
+  const nextIsPremium = next.plan === "premium";
+  const currentIsBlocked = current.planStatus === "blocked";
+  const nextIsBlocked = next.planStatus === "blocked";
+
+  return normalizeStore({
+    ...current,
+    ...next,
+    id: next.id || current.id,
+    companyId: next.companyId || next.company_id || current.companyId,
+    company_id: next.company_id || next.companyId || current.company_id,
+    userId: next.userId || next.user_id || current.userId,
+    user_id: next.user_id || next.userId || current.user_id,
+    name: next.name || current.name,
+    email: next.email || current.email,
+    ownerName: next.ownerName || current.ownerName,
+    segment: next.segment || current.segment,
+    cnpj: next.cnpj || current.cnpj,
+    cpf: next.cpf || current.cpf,
+    documentNumber: next.documentNumber || current.documentNumber,
+    plan: currentIsPremium || nextIsPremium ? "premium" : next.plan || current.plan,
+    planStatus:
+      currentIsBlocked || nextIsBlocked
+        ? "blocked"
+        : next.planStatus || current.planStatus || "active",
+    postsLimit:
+      currentIsPremium || nextIsPremium
+        ? null
+        : next.postsLimit ?? current.postsLimit ?? 15,
+    postsUsed: Math.max(toNumber(current.postsUsed, 0), toNumber(next.postsUsed, 0)),
+    instagramConnected:
+      current.instagramConnected === true || next.instagramConnected === true,
+    facebookConnected:
+      current.facebookConnected === true || next.facebookConnected === true,
+    tiktokConnected: current.tiktokConnected === true || next.tiktokConnected === true,
+    isMaster: current.isMaster === true || next.isMaster === true,
+  });
+}
+
+function dedupeStores(stores: MasterStore[]) {
   const map = new Map<string, MasterStore>();
 
-  mockStores.forEach((store) => {
-    map.set(getStoreMergeKey(store), normalizeStore(store));
-  });
-
-  supabaseStores.forEach((store) => {
-    const key = getStoreMergeKey(store);
+  stores.forEach((store) => {
+    const normalizedStore = normalizeStore(store);
+    const key = getStoreMergeKey(normalizedStore);
     const current = map.get(key);
 
     map.set(
       key,
-      normalizeStore({
-        ...(current || {}),
-        ...store,
-      } as MasterStore)
+      current ? mergeStoreData(current, normalizedStore) : normalizedStore
     );
   });
 
   return Array.from(map.values());
+}
+
+function mergeStores(mockStores: MasterStore[], supabaseStores: MasterStore[]) {
+  if (supabaseStores.length > 0) {
+    return dedupeStores(supabaseStores);
+  }
+
+  return dedupeStores(mockStores);
 }
 
 function isOfficialStore(store: MasterStore) {
@@ -155,6 +201,7 @@ export default function Master() {
   const [deletingStoreId, setDeletingStoreId] = useState<number | string | null>(
     null
   );
+  const [runningAction, setRunningAction] = useState<string | null>(null);
 
   const hasMasterAccess =
     typeof window !== "undefined" &&
@@ -165,6 +212,21 @@ export default function Master() {
   const { data: stores = [], isLoading } = useListStores();
   const updateStore = useUpdateStore();
   const deleteStore = useDeleteStore();
+
+  const getActionKey = (store: MasterStore, action: string) => {
+    return `${getStoreMergeKey(store)}:${action}`;
+  };
+
+  const isRunningAction = (store: MasterStore, action: string) => {
+    return runningAction === getActionKey(store, action);
+  };
+
+  const isStoreBusy = (store: MasterStore) => {
+    return Boolean(runningAction?.startsWith(`${getStoreMergeKey(store)}:`));
+  };
+
+  const buttonMotionClass =
+    "transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-lg active:translate-y-0 active:scale-95 disabled:hover:translate-y-0 disabled:hover:scale-100 disabled:hover:shadow-none";
 
   const loadSupabaseCompanies = async () => {
     setIsLoadingSupabase(true);
@@ -399,6 +461,17 @@ export default function Master() {
       )
     );
 
+    setSupabaseStores((currentStores) =>
+      currentStores.map((store) =>
+        store.id === storeId || getStoreCompanyId(store) === String(storeId)
+          ? {
+              ...store,
+              ...data,
+            }
+          : store
+      )
+    );
+
     if (isNumericId(storeId)) {
       updateStore.mutate(
         {
@@ -420,11 +493,7 @@ export default function Master() {
       return;
     }
 
-    updateStoreLocal(store.id, {
-      plan: "premium",
-      planStatus: "active",
-      postsLimit: null,
-    });
+    setRunningAction(getActionKey(store, "premium"));
 
     try {
       await updateCompanyInSupabase(store, [
@@ -445,12 +514,20 @@ export default function Master() {
         },
       ]);
 
+      updateStoreLocal(store.id, {
+        plan: "premium",
+        planStatus: "active",
+        postsLimit: null,
+      });
+
       toast.success("Plano Premium ativado.");
     } catch (error: any) {
       console.error(error);
       toast.error(
         "Plano alterado na tela, mas não foi salvo no Supabase. Verifique as colunas/permissões da tabela companies."
       );
+    } finally {
+      setRunningAction(null);
     }
   }
 
@@ -460,11 +537,7 @@ export default function Master() {
       return;
     }
 
-    updateStoreLocal(store.id, {
-      plan: "free",
-      planStatus: "active",
-      postsLimit: 15,
-    });
+    setRunningAction(getActionKey(store, "cancel-premium"));
 
     try {
       await updateCompanyInSupabase(store, [
@@ -485,12 +558,20 @@ export default function Master() {
         },
       ]);
 
+      updateStoreLocal(store.id, {
+        plan: "free",
+        planStatus: "active",
+        postsLimit: 15,
+      });
+
       toast.success("Premium cancelado. Conta voltou para o plano gratuito.");
     } catch (error: any) {
       console.error(error);
       toast.error(
         "Plano alterado na tela, mas não foi salvo no Supabase. Verifique as colunas/permissões da tabela companies."
       );
+    } finally {
+      setRunningAction(null);
     }
   }
 
@@ -500,9 +581,7 @@ export default function Master() {
       return;
     }
 
-    updateStoreLocal(store.id, {
-      planStatus: "blocked",
-    });
+    setRunningAction(getActionKey(store, "block"));
 
     try {
       await updateCompanyInSupabase(store, [
@@ -521,6 +600,10 @@ export default function Master() {
           is_blocked: true,
         },
       ]);
+
+      updateStoreLocal(store.id, {
+        planStatus: "blocked",
+      });
 
       toast.success("Conta bloqueada.");
     } catch (error: any) {
@@ -528,13 +611,13 @@ export default function Master() {
       toast.error(
         "Conta bloqueada na tela, mas não foi salva no Supabase. Verifique se existe coluna plan_status, status ou is_blocked."
       );
+    } finally {
+      setRunningAction(null);
     }
   }
 
   async function unblockStore(store: MasterStore) {
-    updateStoreLocal(store.id, {
-      planStatus: "active",
-    });
+    setRunningAction(getActionKey(store, "unblock"));
 
     try {
       await updateCompanyInSupabase(store, [
@@ -554,19 +637,23 @@ export default function Master() {
         },
       ]);
 
+      updateStoreLocal(store.id, {
+        planStatus: "active",
+      });
+
       toast.success("Usuário ativado.");
     } catch (error: any) {
       console.error(error);
       toast.error(
         "Usuário ativado na tela, mas não foi salvo no Supabase. Verifique se existe coluna plan_status, status ou is_blocked."
       );
+    } finally {
+      setRunningAction(null);
     }
   }
 
   async function resetUsage(store: MasterStore) {
-    updateStoreLocal(store.id, {
-      postsUsed: 0,
-    });
+    setRunningAction(getActionKey(store, "reset"));
 
     try {
       await updateCompanyInSupabase(store, [
@@ -578,12 +665,18 @@ export default function Master() {
         },
       ]);
 
+      updateStoreLocal(store.id, {
+        postsUsed: 0,
+      });
+
       toast.success("Uso mensal zerado.");
     } catch (error: any) {
       console.error(error);
       toast.error(
         "Uso zerado na tela, mas não foi salvo no Supabase. Verifique se existe coluna posts_used."
       );
+    } finally {
+      setRunningAction(null);
     }
   }
 
@@ -603,6 +696,7 @@ export default function Master() {
 
     try {
       setDeletingStoreId(store.id);
+      setRunningAction(getActionKey(store, "delete"));
 
       const {
         data: { session },
@@ -656,6 +750,14 @@ export default function Master() {
         currentStores.filter((currentStore) => currentStore.id !== store.id)
       );
 
+      setSupabaseStores((currentStores) =>
+        currentStores.filter(
+          (currentStore) =>
+            currentStore.id !== store.id &&
+            getStoreCompanyId(currentStore) !== getStoreCompanyId(store)
+        )
+      );
+
       if (isNumericId(store.id)) {
         deleteStore.mutate(
           {
@@ -676,6 +778,7 @@ export default function Master() {
       toast.error(error?.message || "Erro ao excluir empresa.");
     } finally {
       setDeletingStoreId(null);
+      setRunningAction(null);
     }
   }
 
@@ -740,6 +843,9 @@ export default function Master() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
+              className={`${buttonMotionClass} hover:border-blue-950 hover:bg-blue-50 hover:text-blue-950 ${
+                isLoadingSupabase ? "animate-pulse" : ""
+              }`}
               onClick={loadSupabaseCompanies}
               disabled={isLoadingSupabase}
             >
@@ -747,7 +853,11 @@ export default function Master() {
               {isLoadingSupabase ? "Atualizando..." : "Atualizar lista"}
             </Button>
 
-            <Button variant="outline" onClick={handleLogout}>
+            <Button
+              variant="outline"
+              className={`${buttonMotionClass} hover:border-red-500 hover:bg-red-50 hover:text-red-600`}
+              onClick={handleLogout}
+            >
               Sair do Master
             </Button>
           </div>
@@ -839,6 +949,16 @@ export default function Master() {
                   const isPremium = store.plan === "premium";
                   const isBlocked = store.planStatus === "blocked";
                   const protectedOfficial = isOfficialStore(store);
+                  const storeBusy = isStoreBusy(store);
+                  const activatingPremium = isRunningAction(store, "premium");
+                  const cancellingPremium = isRunningAction(
+                    store,
+                    "cancel-premium"
+                  );
+                  const blockingStore = isRunningAction(store, "block");
+                  const unblockingStore = isRunningAction(store, "unblock");
+                  const resettingUsage = isRunningAction(store, "reset");
+                  const deletingStore = deletingStoreId === store.id;
 
                   const documentNumber =
                     store.documentNumber || store.cnpj || store.cpf || "";
@@ -971,40 +1091,56 @@ export default function Master() {
                           <>
                             {!isPremium ? (
                               <Button
-                                className="bg-orange-600 hover:bg-orange-700"
+                                className={`${buttonMotionClass} bg-orange-600 hover:bg-orange-700 ${
+                                  activatingPremium ? "animate-pulse" : ""
+                                }`}
                                 onClick={() => activatePremium(store)}
-                                disabled={updateStore.isPending}
+                                disabled={updateStore.isPending || storeBusy}
                               >
                                 <Crown className="mr-2 h-4 w-4" />
-                                Ativar Premium
+                                {activatingPremium
+                                  ? "Ativando..."
+                                  : "Ativar Premium"}
                               </Button>
                             ) : (
                               <Button
                                 variant="outline"
+                                className={`${buttonMotionClass} hover:border-orange-500 hover:bg-orange-50 hover:text-orange-700 ${
+                                  cancellingPremium ? "animate-pulse" : ""
+                                }`}
                                 onClick={() => cancelPremium(store)}
-                                disabled={updateStore.isPending}
+                                disabled={updateStore.isPending || storeBusy}
                               >
-                                Cancelar Premium
+                                {cancellingPremium
+                                  ? "Cancelando..."
+                                  : "Cancelar Premium"}
                               </Button>
                             )}
 
                             {!isBlocked ? (
                               <Button
                                 variant="destructive"
+                                className={`${buttonMotionClass} hover:bg-red-700 ${
+                                  blockingStore ? "animate-pulse" : ""
+                                }`}
                                 onClick={() => blockStore(store)}
-                                disabled={updateStore.isPending}
+                                disabled={updateStore.isPending || storeBusy}
                               >
                                 <Lock className="mr-2 h-4 w-4" />
-                                Bloquear
+                                {blockingStore ? "Bloqueando..." : "Bloquear"}
                               </Button>
                             ) : (
                               <Button
-                                className="bg-emerald-600 hover:bg-emerald-700"
+                                className={`${buttonMotionClass} bg-emerald-600 hover:bg-emerald-700 ${
+                                  unblockingStore ? "animate-pulse" : ""
+                                }`}
                                 onClick={() => unblockStore(store)}
-                                disabled={updateStore.isPending}
+                                disabled={updateStore.isPending || storeBusy}
                               >
                                 <Unlock className="mr-2 h-4 w-4" />
-                                Ativar usuário
+                                {unblockingStore
+                                  ? "Ativando..."
+                                  : "Ativar usuário"}
                               </Button>
                             )}
                           </>
@@ -1012,21 +1148,27 @@ export default function Master() {
 
                         <Button
                           variant="outline"
+                          className={`${buttonMotionClass} hover:border-blue-950 hover:bg-blue-50 hover:text-blue-950 ${
+                            resettingUsage ? "animate-pulse" : ""
+                          }`}
                           onClick={() => resetUsage(store)}
-                          disabled={updateStore.isPending}
+                          disabled={updateStore.isPending || storeBusy}
                         >
                           <RefreshCcw className="mr-2 h-4 w-4" />
-                          Zerar uso mensal
+                          {resettingUsage ? "Zerando..." : "Zerar uso mensal"}
                         </Button>
 
                         {!protectedOfficial && (
                           <Button
                             variant="destructive"
+                            className={`${buttonMotionClass} hover:bg-red-700 ${
+                              deletingStore ? "animate-pulse" : ""
+                            }`}
                             onClick={() => removeStore(store)}
-                            disabled={deletingStoreId === store.id}
+                            disabled={deletingStore || storeBusy}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            {deletingStoreId === store.id
+                            {deletingStore
                               ? "Excluindo..."
                               : "Excluir empresa"}
                           </Button>
