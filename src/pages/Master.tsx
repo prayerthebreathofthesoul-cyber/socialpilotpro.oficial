@@ -84,10 +84,36 @@ function toNumber(value: unknown, fallback = 0) {
 
 function isMissingColumnError(error: any) {
   const message = String(error?.message || "").toLowerCase();
+
   return (
     error?.code === "42703" ||
     message.includes("column") ||
     message.includes("schema cache")
+  );
+}
+
+async function readApiResponse(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+
+  if (response.status === 404 || text.toLowerCase().includes("page")) {
+    throw new Error(
+      "A API /api/master/delete-company não foi encontrada no servidor. Crie o arquivo api/master/delete-company.ts antes de excluir empresas."
+    );
+  }
+
+  throw new Error(text || `Erro HTTP ${response.status} ao excluir empresa.`);
+}
+
+function isOfficialStore(store: MasterStore) {
+  return (
+    store.isMaster === true ||
+    normalizeEmail(store.email) === normalizeEmail(OFFICIAL_EMAIL)
   );
 }
 
@@ -117,6 +143,7 @@ function getStoreMergeKey(store: MasterStore) {
   if (email) return `email:${email}`;
   if (documentNumber) return `document:${documentNumber}`;
   if (companyId) return `company:${companyId}`;
+
   return `id:${String(store.id)}`;
 }
 
@@ -183,13 +210,6 @@ function mergeStores(mockStores: MasterStore[], supabaseStores: MasterStore[]) {
   }
 
   return dedupeStores(mockStores);
-}
-
-function isOfficialStore(store: MasterStore) {
-  return (
-    store.isMaster === true ||
-    normalizeEmail(store.email) === normalizeEmail(OFFICIAL_EMAIL)
-  );
 }
 
 export default function Master() {
@@ -375,9 +395,8 @@ export default function Master() {
     (store) => store.plan === "premium"
   ).length;
 
-  const freeStores = localStores.filter(
-    (store) => store.plan !== "premium"
-  ).length;
+  const freeStores = localStores.filter((store) => store.plan !== "premium")
+    .length;
 
   const blockedStores = localStores.filter(
     (store) => store.planStatus === "blocked"
@@ -740,21 +759,26 @@ export default function Master() {
         }),
       });
 
-      const result = await response.json();
+      const result = await readApiResponse(response);
 
       if (!response.ok) {
         throw new Error(result?.error || "Erro ao excluir empresa.");
       }
 
       setLocalStores((currentStores) =>
-        currentStores.filter((currentStore) => currentStore.id !== store.id)
+        currentStores.filter(
+          (currentStore) =>
+            currentStore.id !== store.id &&
+            getStoreMergeKey(currentStore) !== getStoreMergeKey(store)
+        )
       );
 
       setSupabaseStores((currentStores) =>
         currentStores.filter(
           (currentStore) =>
             currentStore.id !== store.id &&
-            getStoreCompanyId(currentStore) !== getStoreCompanyId(store)
+            getStoreCompanyId(currentStore) !== getStoreCompanyId(store) &&
+            getStoreMergeKey(currentStore) !== getStoreMergeKey(store)
         )
       );
 
@@ -775,6 +799,7 @@ export default function Master() {
 
       toast.success("Empresa e usuário excluídos com sucesso.");
     } catch (error: any) {
+      console.error("Erro ao excluir empresa:", error);
       toast.error(error?.message || "Erro ao excluir empresa.");
     } finally {
       setDeletingStoreId(null);
@@ -1052,8 +1077,7 @@ export default function Master() {
                                 store.tiktokConnected ? "default" : "outline"
                               }
                             >
-                              TikTok{" "}
-                              {store.tiktokConnected ? "conectado" : "off"}
+                              TikTok {store.tiktokConnected ? "conectado" : "off"}
                             </Badge>
                           </div>
                         </div>
