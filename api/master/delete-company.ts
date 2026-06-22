@@ -1,7 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-
 function sendJson(res: any, status: number, body: Record<string, unknown>) {
-  res.status(status).json(body);
+  return res.status(status).json(body);
 }
 
 function normalizeEmail(value: unknown) {
@@ -16,9 +14,7 @@ function getBearerToken(req: any) {
   const authorization = String(req.headers?.authorization || "");
   const [scheme, token] = authorization.split(" ");
 
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return "";
-  }
+  if (scheme?.toLowerCase() !== "bearer" || !token) return "";
 
   return token;
 }
@@ -50,18 +46,68 @@ function isIgnorableSupabaseError(error: any) {
   );
 }
 
-async function deleteByCompanyId(
-  supabaseAdmin: any,
-  table: string,
-  companyId: string
-) {
-  const { error } = await supabaseAdmin
-    .from(table)
-    .delete()
-    .eq("company_id", companyId);
+async function readSupabaseResponse(response: Response) {
+  const text = await response.text();
 
-  if (error && !isIgnorableSupabaseError(error)) {
-    throw new Error(`Erro ao limpar ${table}: ${error.message}`);
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
+function buildSupabaseHeaders(serviceRoleKey: string) {
+  return {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function supabaseGet(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  path: string
+) {
+  const response = await fetch(`${supabaseUrl}${path}`, {
+    method: "GET",
+    headers: buildSupabaseHeaders(serviceRoleKey),
+  });
+
+  const data = await readSupabaseResponse(response);
+
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error || "Erro ao consultar Supabase.");
+  }
+
+  return data;
+}
+
+async function supabaseDelete(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  table: string,
+  filter: string
+) {
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/${table}?${filter}`,
+    {
+      method: "DELETE",
+      headers: {
+        ...buildSupabaseHeaders(serviceRoleKey),
+        Prefer: "return=minimal",
+      },
+    }
+  );
+
+  const data = await readSupabaseResponse(response);
+
+  if (!response.ok && !isIgnorableSupabaseError(data)) {
+    throw new Error(
+      data?.message || data?.error || `Erro ao excluir dados de ${table}.`
+    );
   }
 }
 
@@ -106,12 +152,11 @@ export default async function handler(req: any, res: any) {
 
     if (!token) {
       return sendJson(res, 401, {
-        error: "Sessão inválida ou expirada. Faça login novamente.",
+        error: "Sessão expirada. Faça login novamente.",
       });
     }
 
     const body = getBody(req);
-
     const companyId = String(body.companyId || "").trim();
     let userId = String(body.userId || "").trim();
     const requestedEmail = normalizeEmail(body.email);
@@ -129,44 +174,38 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: "GET",
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${token}`,
       },
     });
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(token);
+    const userData = await readSupabaseResponse(userResponse);
 
-    if (authError || !user) {
+    if (!userResponse.ok || !userData?.email) {
       return sendJson(res, 401, {
         error: "Sessão inválida ou expirada. Entre novamente no painel master.",
-        detalhe: authError?.message || null,
+        detalhe: userData?.message || userData?.error || null,
       });
     }
 
-    if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
+    if (normalizeEmail(userData.email) !== normalizeEmail(officialEmail)) {
       return sendJson(res, 403, {
         error: "Somente a conta oficial pode excluir empresas.",
-        usuarioLogado: user.email || null,
+        usuarioLogado: userData.email,
         contaPermitida: officialEmail,
       });
     }
 
-    const { data: company, error: companyError } = await supabaseAdmin
-      .from("companies")
-      .select("*")
-      .eq("id", companyId)
-      .maybeSingle();
+    const companyRows = await supabaseGet(
+      supabaseUrl,
+      serviceRoleKey,
+      `/rest/v1/companies?id=eq.${encodeURIComponent(companyId)}&select=*&limit=1`
+    );
 
-    if (companyError) {
-      return sendJson(res, 500, {
-        error: `Erro ao buscar empresa: ${companyError.message}`,
-      });
-    }
+    const company = Array.isArray(companyRows) ? companyRows[0] : null;
 
     if (!company) {
       return sendJson(res, 404, {
@@ -185,49 +224,59 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!userId) {
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from("profiles")
-        .select("user_id")
-        .eq("company_id", companyId)
-        .maybeSingle();
+      try {
+        const profileRows = await supabaseGet(
+          supabaseUrl,
+          serviceRoleKey,
+          `/rest/v1/profiles?company_id=eq.${encodeURIComponent(
+            companyId
+          )}&select=user_id&limit=1`
+        );
 
-      if (profileError && !isIgnorableSupabaseError(profileError)) {
-        return sendJson(res, 500, {
-          error: `Erro ao buscar perfil: ${profileError.message}`,
-        });
-      }
+        const profile = Array.isArray(profileRows) ? profileRows[0] : null;
 
-      if (profile?.user_id) {
-        userId = String(profile.user_id);
+        if (profile?.user_id) {
+          userId = String(profile.user_id);
+        }
+      } catch {
+        userId = "";
       }
     }
 
-    await deleteByCompanyId(supabaseAdmin, "social_accounts", companyId);
-    await deleteByCompanyId(supabaseAdmin, "scheduled_posts", companyId);
-    await deleteByCompanyId(supabaseAdmin, "posts", companyId);
-    await deleteByCompanyId(supabaseAdmin, "post_media", companyId);
-    await deleteByCompanyId(supabaseAdmin, "profiles", companyId);
+    const companyFilter = `company_id=eq.${encodeURIComponent(companyId)}`;
 
-    const { error: deleteCompanyError } = await supabaseAdmin
-      .from("companies")
-      .delete()
-      .eq("id", companyId);
+    await supabaseDelete(supabaseUrl, serviceRoleKey, "social_accounts", companyFilter);
+    await supabaseDelete(supabaseUrl, serviceRoleKey, "scheduled_posts", companyFilter);
+    await supabaseDelete(supabaseUrl, serviceRoleKey, "posts", companyFilter);
+    await supabaseDelete(supabaseUrl, serviceRoleKey, "post_media", companyFilter);
+    await supabaseDelete(supabaseUrl, serviceRoleKey, "profiles", companyFilter);
 
-    if (deleteCompanyError) {
-      return sendJson(res, 500, {
-        error: `Erro ao excluir empresa: ${deleteCompanyError.message}`,
-      });
-    }
+    await supabaseDelete(
+      supabaseUrl,
+      serviceRoleKey,
+      "companies",
+      `id=eq.${encodeURIComponent(companyId)}`
+    );
 
     if (userId) {
-      const { error: deleteUserError } =
-        await supabaseAdmin.auth.admin.deleteUser(userId);
+      const deleteUserResponse = await fetch(
+        `${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+        {
+          method: "DELETE",
+          headers: buildSupabaseHeaders(serviceRoleKey),
+        }
+      );
 
-      if (deleteUserError) {
+      const deleteUserData = await readSupabaseResponse(deleteUserResponse);
+
+      if (!deleteUserResponse.ok) {
         return sendJson(res, 500, {
           error:
             "A empresa foi excluída, mas houve erro ao excluir o usuário do Auth.",
-          detalhe: deleteUserError.message,
+          detalhe:
+            deleteUserData?.message ||
+            deleteUserData?.error ||
+            "Erro desconhecido ao excluir usuário.",
           deletedCompanyId: companyId,
           userId,
         });
