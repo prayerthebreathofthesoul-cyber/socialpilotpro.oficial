@@ -155,9 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const redirectUri = String(process.env.TIKTOK_REDIRECT_URI || "").trim();
 
     const supabaseUrl = String(
-      process.env.SUPABASE_URL ||
-        process.env.VITE_SUPABASE_URL ||
-        ""
+      process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
     ).replace(/\/$/, "");
 
     const supabaseAnonKey = String(
@@ -237,7 +235,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     authUrl.searchParams.set("scope", scopes);
     authUrl.searchParams.set("response_type", "code");
 
-    return res.redirect(302, authUrl.toString());
+    return res.status(200).json({
+      url: authUrl.toString(),
+    });
   } catch (error: any) {
     console.error("Erro ao iniciar conexão com o TikTok:", error?.message);
     return res.status(500).json({ error: "Could not start TikTok connection" });
