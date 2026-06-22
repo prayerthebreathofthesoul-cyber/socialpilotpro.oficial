@@ -48,6 +48,8 @@ type Profile = {
   role: string | null;
 };
 
+type SocialPlatform = "instagram" | "facebook" | "tiktok";
+
 const segmentOptions = [
   "Ferramentas e utilidades",
   "Moda e acessórios",
@@ -77,6 +79,8 @@ export default function Settings() {
   const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
   const [isConnectingMeta, setIsConnectingMeta] = useState(false);
   const [isConnectingTiktok, setIsConnectingTiktok] = useState(false);
+  const [disconnectingPlatform, setDisconnectingPlatform] =
+    useState<SocialPlatform | null>(null);
 
   const [userEmail, setUserEmail] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -455,6 +459,61 @@ export default function Settings() {
     }
   };
 
+  const handleDisconnectSocial = async (platform: SocialPlatform) => {
+    if (!company) {
+      toast.error("Empresa não encontrada.");
+      return;
+    }
+
+    const platformLabels: Record<SocialPlatform, string> = {
+      instagram: "Instagram",
+      facebook: "Facebook",
+      tiktok: "TikTok",
+    };
+
+    const confirmed = window.confirm(
+      `Deseja desconectar ${platformLabels[platform]} desta conta?`
+    );
+
+    if (!confirmed) return;
+
+    setDisconnectingPlatform(platform);
+
+    try {
+      const { error } = await supabase
+        .from("social_accounts")
+        .update({
+          status: "disconnected",
+          is_connected: false,
+        })
+        .eq("company_id", company.id)
+        .eq("platform", platform);
+
+      if (error) {
+        throw error;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        instagramConnected:
+          platform === "instagram" ? false : prev.instagramConnected,
+        facebookConnected:
+          platform === "facebook" ? false : prev.facebookConnected,
+        tiktokConnected: platform === "tiktok" ? false : prev.tiktokConnected,
+      }));
+
+      toast.success(`${platformLabels[platform]} desconectado com sucesso.`);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(
+        error?.message ||
+          `Não foi possível desconectar ${platformLabels[platform]}.`
+      );
+    } finally {
+      setDisconnectingPlatform(null);
+    }
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -677,17 +736,26 @@ export default function Settings() {
                     <Button
                       type="button"
                       variant={
-                        formData.instagramConnected ? "secondary" : "outline"
+                        formData.instagramConnected ? "destructive" : "outline"
                       }
-                      onClick={handleConnectMeta}
-                      disabled={isConnectingMeta}
+                      onClick={() =>
+                        formData.instagramConnected
+                          ? handleDisconnectSocial("instagram")
+                          : handleConnectMeta()
+                      }
+                      disabled={
+                        isConnectingMeta ||
+                        disconnectingPlatform === "instagram"
+                      }
                       className="sm:w-auto w-full"
                     >
-                      {isConnectingMeta
-                        ? "Conectando..."
-                        : formData.instagramConnected
-                          ? "Reconectar"
-                          : "Conectar"}
+                      {disconnectingPlatform === "instagram"
+                        ? "Desconectando..."
+                        : isConnectingMeta
+                          ? "Conectando..."
+                          : formData.instagramConnected
+                            ? "Desconectar"
+                            : "Conectar"}
                     </Button>
                   </div>
 
@@ -710,17 +778,26 @@ export default function Settings() {
                     <Button
                       type="button"
                       variant={
-                        formData.facebookConnected ? "secondary" : "outline"
+                        formData.facebookConnected ? "destructive" : "outline"
                       }
-                      onClick={handleConnectMeta}
-                      disabled={isConnectingMeta}
+                      onClick={() =>
+                        formData.facebookConnected
+                          ? handleDisconnectSocial("facebook")
+                          : handleConnectMeta()
+                      }
+                      disabled={
+                        isConnectingMeta ||
+                        disconnectingPlatform === "facebook"
+                      }
                       className="sm:w-auto w-full"
                     >
-                      {isConnectingMeta
-                        ? "Conectando..."
-                        : formData.facebookConnected
-                          ? "Reconectar"
-                          : "Conectar"}
+                      {disconnectingPlatform === "facebook"
+                        ? "Desconectando..."
+                        : isConnectingMeta
+                          ? "Conectando..."
+                          : formData.facebookConnected
+                            ? "Desconectar"
+                            : "Conectar"}
                     </Button>
                   </div>
 
@@ -742,16 +819,27 @@ export default function Settings() {
 
                     <Button
                       type="button"
-                      variant={formData.tiktokConnected ? "secondary" : "outline"}
-                      onClick={handleConnectTiktok}
-                      disabled={isConnectingTiktok}
+                      variant={
+                        formData.tiktokConnected ? "destructive" : "outline"
+                      }
+                      onClick={() =>
+                        formData.tiktokConnected
+                          ? handleDisconnectSocial("tiktok")
+                          : handleConnectTiktok()
+                      }
+                      disabled={
+                        isConnectingTiktok ||
+                        disconnectingPlatform === "tiktok"
+                      }
                       className="sm:w-auto w-full"
                     >
-                      {isConnectingTiktok
-                        ? "Conectando..."
-                        : formData.tiktokConnected
-                          ? "Reconectar"
-                          : "Conectar"}
+                      {disconnectingPlatform === "tiktok"
+                        ? "Desconectando..."
+                        : isConnectingTiktok
+                          ? "Conectando..."
+                          : formData.tiktokConnected
+                            ? "Desconectar"
+                            : "Conectar"}
                     </Button>
                   </div>
 
