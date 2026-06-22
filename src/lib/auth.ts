@@ -4,17 +4,17 @@ export const AUTH_KEY = "spm_auth";
 export const USER_EMAIL_KEY = "socialpilot_user_email";
 
 /**
- * Mantemos esse marcador local para o Layout atual saber se o usuário está logado.
- * Depois que todo o sistema estiver no Supabase, podemos remover isso.
+ * Marcador simples para o layout saber se existe usuário logado.
+ * Importante: não armazenamos access_token aqui.
  */
 export const getAuthToken = () => {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(AUTH_KEY);
 };
 
-export const setAuthToken = (token: string) => {
+export const setAuthToken = () => {
   if (typeof window === "undefined") return;
-  localStorage.setItem(AUTH_KEY, token);
+  localStorage.setItem(AUTH_KEY, "authenticated");
 };
 
 export const clearAuthToken = () => {
@@ -24,7 +24,7 @@ export const clearAuthToken = () => {
 
 export const setLoggedUserEmail = (email: string) => {
   if (typeof window === "undefined") return;
-  localStorage.setItem(USER_EMAIL_KEY, email);
+  localStorage.setItem(USER_EMAIL_KEY, email.trim().toLowerCase());
 };
 
 export const getLoggedUserEmail = () => {
@@ -42,6 +42,23 @@ export const isAuthenticated = () => {
 };
 
 /**
+ * Use esta função quando alguma API precisar do Bearer token.
+ * Ela busca o token direto da sessão atual do Supabase, sem duplicar em localStorage.
+ */
+export const getAccessToken = async () => {
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
+
+  if (error || !session?.access_token) {
+    return null;
+  }
+
+  return session.access_token;
+};
+
+/**
  * Login real com Supabase
  */
 export const signInWithEmail = async (email: string, password: string) => {
@@ -56,8 +73,8 @@ export const signInWithEmail = async (email: string, password: string) => {
     throw error;
   }
 
-  if (data.session?.access_token) {
-    setAuthToken(data.session.access_token);
+  if (data.session) {
+    setAuthToken();
   }
 
   if (data.user?.email) {
@@ -75,12 +92,7 @@ export const signInWithEmail = async (email: string, password: string) => {
 export const signUpWithEmail = async (
   email: string,
   password: string,
-  metadata?: {
-    name?: string;
-    companyName?: string;
-    cnpj?: string;
-    cpf?: string;
-  }
+  metadata?: Record<string, unknown>
 ) => {
   const cleanEmail = email.trim().toLowerCase();
 
@@ -96,8 +108,8 @@ export const signUpWithEmail = async (
     throw error;
   }
 
-  if (data.session?.access_token) {
-    setAuthToken(data.session.access_token);
+  if (data.session) {
+    setAuthToken();
   }
 
   if (data.user?.email) {
@@ -123,6 +135,7 @@ export const signOut = async () => {
     localStorage.removeItem("spm_user");
     localStorage.removeItem("spm_current_company");
     localStorage.removeItem("socialpilot_current_company");
+    localStorage.removeItem("socialpilot_demo_stores");
   }
 };
 
@@ -136,8 +149,11 @@ export const getCurrentUser = async () => {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
+    clearAuthToken();
     return null;
   }
+
+  setAuthToken();
 
   if (user.email) {
     setLoggedUserEmail(user.email);
@@ -156,12 +172,11 @@ export const getCurrentSession = async () => {
   } = await supabase.auth.getSession();
 
   if (error || !session) {
+    clearAuthToken();
     return null;
   }
 
-  if (session.access_token) {
-    setAuthToken(session.access_token);
-  }
+  setAuthToken();
 
   if (session.user?.email) {
     setLoggedUserEmail(session.user.email);
