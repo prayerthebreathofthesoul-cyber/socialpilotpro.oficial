@@ -148,6 +148,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "is_blocked",
       "posts_limit",
       "posts_used",
+      "premium_started_at",
+      "premium_expires_at",
     ];
 
     const cleanPayload: Record<string, unknown> = {};
