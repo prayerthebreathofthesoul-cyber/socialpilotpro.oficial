@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
 
 function json(res: VercelResponse, status: number, body: Record<string, unknown>) {
   return res.status(status).json(body);
@@ -13,14 +12,12 @@ function getBearerToken(req: VercelRequest) {
   const authorization = String(req.headers.authorization || "");
   const [scheme, token] = authorization.split(" ");
 
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
+  if (scheme?.toLowerCase() !== "bearer" || !token) return null;
 
   return token;
 }
 
-function getRequestBody(req: VercelRequest) {
+function getBody(req: VercelRequest) {
   if (!req.body) return {};
 
   if (typeof req.body === "string") {
@@ -32,6 +29,18 @@ function getRequestBody(req: VercelRequest) {
   }
 
   return req.body;
+}
+
+async function readJson(response: Response) {
+  const text = await response.text();
+
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -55,25 +64,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const officialEmail =
       process.env.MASTER_OFFICIAL_EMAIL || "socialpilotpro.oficial@gmail.com";
 
-    if (!supabaseUrl) {
+    if (!supabaseUrl || !serviceRoleKey) {
       return json(res, 500, {
-        error: "SUPABASE_URL não está configurada na Vercel.",
+        error: "SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurada na Vercel.",
       });
     }
 
-    if (!serviceRoleKey) {
-      return json(res, 500, {
-        error: "SUPABASE_SERVICE_ROLE_KEY não está configurada na Vercel.",
-      });
-    }
+    const userToken = getBearerToken(req);
 
-    const token = getBearerToken(req);
-
-    if (!token) {
+    if (!userToken) {
       return json(res, 401, { error: "Sessão inválida ou expirada." });
     }
 
-    const body = getRequestBody(req);
+    const body = getBody(req);
     const companyId = String(body?.companyId || "").trim();
     const payload = body?.payload;
 
@@ -85,39 +88,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return json(res, 400, { error: "Payload inválido." });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${userToken}`,
       },
     });
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseAdmin.auth.getUser(token);
+    const userData = await readJson(userResponse);
 
-    if (userError || !user) {
+    if (!userResponse.ok || !userData?.email) {
       return json(res, 401, {
-        error: userError?.message || "Sessão inválida ou expirada.",
+        error: "Sessão inválida ou expirada.",
       });
     }
 
-    if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
+    if (normalizeEmail(userData.email) !== normalizeEmail(officialEmail)) {
       return json(res, 403, {
         error: "Somente a conta oficial pode alterar empresas.",
       });
     }
 
-    const { data: company, error: companyError } = await supabaseAdmin
-      .from("companies")
-      .select("id,email")
-      .eq("id", companyId)
-      .maybeSingle();
+    const companyResponse = await fetch(
+      `${supabaseUrl}/rest/v1/companies?id=eq.${encodeURIComponent(
+        companyId
+      )}&select=id,email`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+      }
+    );
 
-    if (companyError) {
-      return json(res, 500, { error: companyError.message });
+    const companies = await readJson(companyResponse);
+
+    if (!companyResponse.ok) {
+      return json(res, 500, {
+        error: companies?.message || companies?.error || "Erro ao buscar empresa.",
+      });
     }
+
+    const company = Array.isArray(companies) ? companies[0] : null;
 
     if (!company) {
       return json(res, 404, { error: "Empresa não encontrada." });
@@ -148,24 +160,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (Object.keys(cleanPayload).length === 0) {
       return json(res, 400, {
-        error: "Nenhum campo permitido foi enviado para atualização.",
+        error: "Nenhum campo permitido foi enviado.",
       });
     }
 
     cleanPayload.updated_at = new Date().toISOString();
 
-    const { data, error } = await supabaseAdmin
-      .from("companies")
-      .update(cleanPayload)
-      .eq("id", companyId)
-      .select("*")
-      .maybeSingle();
+    const updateResponse = await fetch(
+      `${supabaseUrl}/rest/v1/companies?id=eq.${encodeURIComponent(
+        companyId
+      )}&select=*`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify(cleanPayload),
+      }
+    );
 
-    if (error) {
-      return json(res, 500, { error: error.message });
+    const updatedCompanies = await readJson(updateResponse);
+
+    if (!updateResponse.ok) {
+      return json(res, 500, {
+        error:
+          updatedCompanies?.message ||
+          updatedCompanies?.error ||
+          "Erro ao atualizar empresa.",
+      });
     }
 
-    if (!data) {
+    const updatedCompany = Array.isArray(updatedCompanies)
+      ? updatedCompanies[0]
+      : null;
+
+    if (!updatedCompany) {
       return json(res, 500, {
         error: "Nenhuma empresa foi alterada no banco.",
       });
@@ -173,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return json(res, 200, {
       ok: true,
-      company: data,
+      company: updatedCompany,
     });
   } catch (error: any) {
     console.error("Erro em /api/master/update-company:", error);
