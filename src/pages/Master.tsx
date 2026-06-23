@@ -34,6 +34,7 @@ import {
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
 const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
+const PREMIUM_DAYS = 30;
 
 type MasterStore = Partial<Omit<StoreRecord, "id">> & {
   id: number | string;
@@ -55,6 +56,8 @@ type MasterStore = Partial<Omit<StoreRecord, "id">> & {
   planStatus?: "active" | "blocked" | "cancelled" | string | null;
   postsLimit?: number | null;
   postsUsed?: number | null;
+  premiumStartedAt?: string | null;
+  premiumExpiresAt?: string | null;
   instagramConnected?: boolean;
   facebookConnected?: boolean;
   tiktokConnected?: boolean;
@@ -168,6 +171,8 @@ function mergeStoreData(current: MasterStore, next: MasterStore): MasterStore {
         ? null
         : next.postsLimit ?? current.postsLimit ?? 15,
     postsUsed: Math.max(toNumber(current.postsUsed, 0), toNumber(next.postsUsed, 0)),
+    premiumStartedAt: next.premiumStartedAt ?? current.premiumStartedAt ?? null,
+    premiumExpiresAt: next.premiumExpiresAt ?? current.premiumExpiresAt ?? null,
     instagramConnected:
       current.instagramConnected === true || next.instagramConnected === true,
     facebookConnected:
@@ -312,6 +317,8 @@ export default function Master() {
               ? null
               : toNumber(company.posts_limit ?? company.postsLimit, 15),
           postsUsed: toNumber(company.posts_used ?? company.postsUsed, 0),
+          premiumStartedAt: company.premium_started_at || null,
+          premiumExpiresAt: company.premium_expires_at || null,
           instagramConnected: isPlatformConnected("instagram"),
           facebookConnected: isPlatformConnected("facebook"),
           tiktokConnected: isPlatformConnected("tiktok"),
@@ -461,6 +468,14 @@ export default function Master() {
     setRunningAction(getActionKey(store, "premium"));
 
     try {
+      const premiumStartedAt = new Date();
+      const premiumExpiresAt = new Date(premiumStartedAt);
+
+      premiumExpiresAt.setDate(premiumExpiresAt.getDate() + PREMIUM_DAYS);
+
+      const premiumStartedAtIso = premiumStartedAt.toISOString();
+      const premiumExpiresAtIso = premiumExpiresAt.toISOString();
+
       await updateCompanyInSupabase(store, [
         {
           plan: "premium",
@@ -468,6 +483,8 @@ export default function Master() {
           status: "active",
           is_blocked: false,
           posts_limit: null,
+          premium_started_at: premiumStartedAtIso,
+          premium_expires_at: premiumExpiresAtIso,
         },
       ]);
 
@@ -475,10 +492,12 @@ export default function Master() {
         plan: "premium",
         planStatus: "active",
         postsLimit: null,
+        premiumStartedAt: premiumStartedAtIso,
+        premiumExpiresAt: premiumExpiresAtIso,
       });
 
       await loadSupabaseCompanies();
-      toast.success("Plano Premium ativado.");
+      toast.success(`Plano Premium ativado por ${PREMIUM_DAYS} dias.`);
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || "Plano Premium não foi salvo no banco.");
@@ -503,6 +522,8 @@ export default function Master() {
           status: "active",
           is_blocked: false,
           posts_limit: 15,
+          premium_started_at: null,
+          premium_expires_at: null,
         },
       ]);
 
@@ -510,6 +531,8 @@ export default function Master() {
         plan: "free",
         planStatus: "active",
         postsLimit: 15,
+        premiumStartedAt: null,
+        premiumExpiresAt: null,
       });
 
       await loadSupabaseCompanies();
