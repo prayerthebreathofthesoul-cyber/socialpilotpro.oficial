@@ -50,6 +50,9 @@ type Profile = {
 
 type SocialPlatform = "instagram" | "facebook" | "tiktok";
 
+const FREE_PLAN_TRIAL_DAYS = 3;
+const FREE_PLAN_POST_LIMIT = 3;
+
 const segmentOptions = [
   "Ferramentas e utilidades",
   "Moda e acessórios",
@@ -869,7 +872,8 @@ export default function Settings() {
                   <CardHeader>
                     <CardTitle>Plano Gratuito</CardTitle>
                     <CardDescription>
-                      Essencial para começar a organizar seus posts
+                      Teste por {FREE_PLAN_TRIAL_DAYS} dias para conhecer a
+                      plataforma
                     </CardDescription>
                   </CardHeader>
 
@@ -884,7 +888,11 @@ export default function Settings() {
                     <ul className="space-y-2 text-sm text-muted-foreground">
                       <li className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-green-500" />
-                        Até 15 posts por mês
+                        Até {FREE_PLAN_POST_LIMIT} posts no teste grátis
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-green-500" />
+                        Acesso grátis por {FREE_PLAN_TRIAL_DAYS} dias
                       </li>
                       <li className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-green-500" />
