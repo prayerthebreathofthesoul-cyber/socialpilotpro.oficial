@@ -89,16 +89,6 @@ function isOfficialStore(store: MasterStore) {
   );
 }
 
-function isMissingColumnError(error: any) {
-  const message = String(error?.message || "").toLowerCase();
-
-  return (
-    error?.code === "42703" ||
-    message.includes("column") ||
-    message.includes("schema cache")
-  );
-}
-
 async function readApiResponse(response: Response) {
   const contentType = response.headers.get("content-type") || "";
 
@@ -110,11 +100,11 @@ async function readApiResponse(response: Response) {
 
   if (response.status === 404 || text.toLowerCase().includes("page")) {
     throw new Error(
-      "A API /api/master/delete-company não foi encontrada no servidor."
+      "A API solicitada não foi encontrada no servidor. Verifique se o arquivo existe dentro da pasta api/master."
     );
   }
 
-  throw new Error(text || `Erro HTTP ${response.status} ao excluir empresa.`);
+  throw new Error(text || `Erro HTTP ${response.status}.`);
 }
 
 function normalizeStore(store: MasterStore): MasterStore {
@@ -182,7 +172,8 @@ function mergeStoreData(current: MasterStore, next: MasterStore): MasterStore {
       current.instagramConnected === true || next.instagramConnected === true,
     facebookConnected:
       current.facebookConnected === true || next.facebookConnected === true,
-    tiktokConnected: current.tiktokConnected === true || next.tiktokConnected === true,
+    tiktokConnected:
+      current.tiktokConnected === true || next.tiktokConnected === true,
     isMaster: current.isMaster === true || next.isMaster === true,
   });
 }
@@ -202,7 +193,9 @@ function dedupeStores(stores: MasterStore[]) {
 }
 
 function mergeStores(mockStores: MasterStore[], supabaseStores: MasterStore[]) {
-  return supabaseStores.length > 0 ? dedupeStores(supabaseStores) : dedupeStores(mockStores);
+  return supabaseStores.length > 0
+    ? dedupeStores(supabaseStores)
+    : dedupeStores(mockStores);
 }
 
 export default function Master() {
@@ -396,40 +389,44 @@ export default function Master() {
     payloads: Record<string, unknown>[]
   ) {
     const companyId = getStoreCompanyId(store);
-    if (!companyId) return;
 
-    let lastError: any = null;
-
-    for (const payload of payloads) {
-      const payloadWithUpdatedAt = {
-        ...payload,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from("companies")
-        .update(payloadWithUpdatedAt)
-        .eq("id", companyId);
-
-      if (!error) return;
-
-      lastError = error;
-
-      if (!isMissingColumnError(error)) break;
-
-      const { error: retryError } = await supabase
-        .from("companies")
-        .update(payload)
-        .eq("id", companyId);
-
-      if (!retryError) return;
-
-      lastError = retryError;
-
-      if (!isMissingColumnError(retryError)) break;
+    if (!companyId) {
+      throw new Error("ID da empresa não encontrado.");
     }
 
-    if (lastError) throw lastError;
+    const payload = payloads[0];
+
+    if (!payload) {
+      throw new Error("Nenhuma alteração foi enviada.");
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
+    const response = await fetch("/api/master/update-company", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        companyId,
+        payload,
+      }),
+    });
+
+    const result = await readApiResponse(response);
+
+    if (!response.ok) {
+      throw new Error(result?.error || "Erro ao salvar alteração da empresa.");
+    }
+
+    return result;
   }
 
   function updateStoreLocal(storeId: number | string, data: Partial<MasterStore>) {
@@ -472,14 +469,6 @@ export default function Master() {
           is_blocked: false,
           posts_limit: null,
         },
-        {
-          plan: "premium",
-          plan_status: "active",
-          posts_limit: null,
-        },
-        {
-          plan: "premium",
-        },
       ]);
 
       updateStoreLocal(store.id, {
@@ -488,12 +477,11 @@ export default function Master() {
         postsLimit: null,
       });
 
+      await loadSupabaseCompanies();
       toast.success("Plano Premium ativado.");
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        "Plano alterado na tela, mas não foi salvo no Supabase. Verifique as colunas/permissões da tabela companies."
-      );
+      toast.error(error?.message || "Plano Premium não foi salvo no banco.");
     } finally {
       setRunningAction(null);
     }
@@ -516,14 +504,6 @@ export default function Master() {
           is_blocked: false,
           posts_limit: 15,
         },
-        {
-          plan: "free",
-          plan_status: "active",
-          posts_limit: 15,
-        },
-        {
-          plan: "free",
-        },
       ]);
 
       updateStoreLocal(store.id, {
@@ -532,12 +512,11 @@ export default function Master() {
         postsLimit: 15,
       });
 
+      await loadSupabaseCompanies();
       toast.success("Premium cancelado. Conta voltou para o plano gratuito.");
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        "Plano alterado na tela, mas não foi salvo no Supabase. Verifique as colunas/permissões da tabela companies."
-      );
+      toast.error(error?.message || "Cancelamento do Premium não foi salvo no banco.");
     } finally {
       setRunningAction(null);
     }
@@ -558,24 +537,14 @@ export default function Master() {
           status: "blocked",
           is_blocked: true,
         },
-        {
-          plan_status: "blocked",
-        },
-        {
-          status: "blocked",
-        },
-        {
-          is_blocked: true,
-        },
       ]);
 
       updateStoreLocal(store.id, { planStatus: "blocked" });
+      await loadSupabaseCompanies();
       toast.success("Conta bloqueada.");
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        "Conta bloqueada na tela, mas não foi salva no Supabase. Verifique se existe coluna plan_status, status ou is_blocked."
-      );
+      toast.error(error?.message || "Bloqueio não foi salvo no banco.");
     } finally {
       setRunningAction(null);
     }
@@ -591,24 +560,14 @@ export default function Master() {
           status: "active",
           is_blocked: false,
         },
-        {
-          plan_status: "active",
-        },
-        {
-          status: "active",
-        },
-        {
-          is_blocked: false,
-        },
       ]);
 
       updateStoreLocal(store.id, { planStatus: "active" });
+      await loadSupabaseCompanies();
       toast.success("Usuário ativado.");
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        "Usuário ativado na tela, mas não foi salvo no Supabase. Verifique se existe coluna plan_status, status ou is_blocked."
-      );
+      toast.error(error?.message || "Ativação do usuário não foi salva no banco.");
     } finally {
       setRunningAction(null);
     }
@@ -622,18 +581,14 @@ export default function Master() {
         {
           posts_used: 0,
         },
-        {
-          postsUsed: 0,
-        },
       ]);
 
       updateStoreLocal(store.id, { postsUsed: 0 });
+      await loadSupabaseCompanies();
       toast.success("Uso mensal zerado.");
     } catch (error: any) {
       console.error(error);
-      toast.error(
-        "Uso zerado na tela, mas não foi salvo no Supabase. Verifique se existe coluna posts_used."
-      );
+      toast.error(error?.message || "Uso mensal não foi salvo no banco.");
     } finally {
       setRunningAction(null);
     }
