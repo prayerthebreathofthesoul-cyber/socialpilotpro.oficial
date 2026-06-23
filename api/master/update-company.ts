@@ -16,14 +16,11 @@ const officialEmail =
 
 const FREE_PLAN_POST_LIMIT = 3;
 
-type MasterAction =
-  | "activate_premium"
-  | "cancel_premium"
-  | "block"
-  | "unblock"
-  | "reset_usage";
-
-function json(res: VercelResponse, status: number, body: Record<string, unknown>) {
+function sendJson(
+  res: VercelResponse,
+  status: number,
+  body: Record<string, unknown>
+) {
   return res.status(status).json(body);
 }
 
@@ -31,18 +28,7 @@ function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
-function getBearerToken(req: VercelRequest) {
-  const authorization = req.headers.authorization || "";
-  const [scheme, token] = authorization.split(" ");
-
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
-
-  return token;
-}
-
-function getRequestBody(req: VercelRequest) {
+function getBody(req: VercelRequest) {
   if (typeof req.body === "string") {
     try {
       return JSON.parse(req.body);
@@ -54,162 +40,61 @@ function getRequestBody(req: VercelRequest) {
   return req.body || {};
 }
 
-function isMissingColumnError(error: any) {
-  const message = String(error?.message || "").toLowerCase();
+function getBearerToken(req: VercelRequest) {
+  const authorization = String(req.headers.authorization || "");
+  const parts = authorization.split(" ");
 
-  return (
-    error?.code === "42703" ||
-    message.includes("column") ||
-    message.includes("schema cache")
-  );
-}
-
-async function updateCompanyWithFallbacks(
-  supabaseAdmin: ReturnType<typeof createClient>,
-  companyId: string,
-  payloads: Record<string, unknown>[]
-) {
-  let lastError: any = null;
-
-  for (const payload of payloads) {
-    const payloadWithUpdatedAt = {
-      ...payload,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await supabaseAdmin
-      .from("companies")
-      .update(payloadWithUpdatedAt)
-      .eq("id", companyId);
-
-    if (!error) {
-      const { data } = await supabaseAdmin
-        .from("companies")
-        .select("*")
-        .eq("id", companyId)
-        .maybeSingle();
-
-      return data;
-    }
-
-    lastError = error;
-
-    if (!isMissingColumnError(error)) {
-      break;
-    }
-
-    const { error: retryError } = await supabaseAdmin
-      .from("companies")
-      .update(payload)
-      .eq("id", companyId);
-
-    if (!retryError) {
-      const { data } = await supabaseAdmin
-        .from("companies")
-        .select("*")
-        .eq("id", companyId)
-        .maybeSingle();
-
-      return data;
-    }
-
-    lastError = retryError;
-
-    if (!isMissingColumnError(retryError)) {
-      break;
-    }
+  if (parts[0]?.toLowerCase() !== "bearer" || !parts[1]) {
+    return "";
   }
 
-  throw lastError || new Error("Não foi possível atualizar a empresa.");
+  return parts[1];
 }
 
-function getActionPayloads(action: MasterAction) {
+function getPayload(action: string) {
   if (action === "activate_premium") {
-    return [
-      {
-        plan: "premium",
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-        posts_limit: null,
-      },
-      {
-        plan: "premium",
-        plan_status: "active",
-        posts_limit: null,
-      },
-      {
-        plan: "premium",
-      },
-    ];
+    return {
+      plan: "premium",
+      plan_status: "active",
+      status: "active",
+      is_blocked: false,
+      posts_limit: null,
+    };
   }
 
   if (action === "cancel_premium") {
-    return [
-      {
-        plan: "free",
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-        posts_limit: FREE_PLAN_POST_LIMIT,
-      },
-      {
-        plan: "free",
-        plan_status: "active",
-        posts_limit: FREE_PLAN_POST_LIMIT,
-      },
-      {
-        plan: "free",
-      },
-    ];
+    return {
+      plan: "free",
+      plan_status: "active",
+      status: "active",
+      is_blocked: false,
+      posts_limit: FREE_PLAN_POST_LIMIT,
+    };
   }
 
   if (action === "block") {
-    return [
-      {
-        plan_status: "blocked",
-        status: "blocked",
-        is_blocked: true,
-      },
-      {
-        plan_status: "blocked",
-      },
-      {
-        status: "blocked",
-      },
-      {
-        is_blocked: true,
-      },
-    ];
+    return {
+      plan_status: "blocked",
+      status: "blocked",
+      is_blocked: true,
+    };
   }
 
   if (action === "unblock") {
-    return [
-      {
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-      },
-      {
-        plan_status: "active",
-      },
-      {
-        status: "active",
-      },
-      {
-        is_blocked: false,
-      },
-    ];
+    return {
+      plan_status: "active",
+      status: "active",
+      is_blocked: false,
+    };
   }
 
-  return [
-    {
+  if (action === "reset_usage") {
+    return {
       posts_used: 0,
-    },
-    {
-      postsUsed: 0,
-    },
-  ];
+    };
+  }
+
+  return null;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -217,20 +102,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Content-Type", "application/json");
 
     if (req.method !== "POST") {
-      return json(res, 405, { error: "Método não permitido." });
+      return sendJson(res, 405, {
+        ok: false,
+        error: "Método não permitido.",
+      });
     }
 
-    if (!supabaseUrl || !serviceRoleKey) {
-      return json(res, 500, {
-        error:
-          "Servidor sem SUPABASE_URL/VITE_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY configurado.",
+    if (!supabaseUrl) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: "SUPABASE_URL ou VITE_SUPABASE_URL não está configurado.",
+      });
+    }
+
+    if (!serviceRoleKey) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: "SUPABASE_SERVICE_ROLE_KEY não está configurado no Vercel.",
       });
     }
 
     const token = getBearerToken(req);
 
     if (!token) {
-      return json(res, 401, { error: "Sessão inválida ou expirada." });
+      return sendJson(res, 401, {
+        ok: false,
+        error: "Sessão inválida ou expirada.",
+      });
+    }
+
+    const body = getBody(req);
+    const companyId = String(body.companyId || "").trim();
+    const action = String(body.action || "").trim();
+
+    if (!companyId) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "companyId é obrigatório.",
+      });
+    }
+
+    const payload = getPayload(action);
+
+    if (!payload) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "Ação inválida.",
+      });
     }
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
@@ -246,76 +164,81 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } = await supabaseAdmin.auth.getUser(token);
 
     if (userError || !user) {
-      return json(res, 401, { error: "Sessão inválida ou expirada." });
-    }
-
-    if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
-      return json(res, 403, {
-        error: "Somente a conta oficial pode alterar empresas.",
+      return sendJson(res, 401, {
+        ok: false,
+        error: "Sessão inválida ou expirada.",
+        detail: userError?.message || null,
       });
     }
 
-    const body = getRequestBody(req);
-    const companyId = String(body?.companyId || "").trim();
-    const action = String(body?.action || "").trim() as MasterAction;
-
-    if (!companyId) {
-      return json(res, 400, { error: "companyId é obrigatório." });
-    }
-
-    if (
-      ![
-        "activate_premium",
-        "cancel_premium",
-        "block",
-        "unblock",
-        "reset_usage",
-      ].includes(action)
-    ) {
-      return json(res, 400, { error: "Ação inválida." });
+    if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
+      return sendJson(res, 403, {
+        ok: false,
+        error: "Somente a conta oficial pode alterar empresas.",
+        loggedEmail: user.email || null,
+        officialEmail,
+      });
     }
 
     const { data: company, error: companyError } = await supabaseAdmin
       .from("companies")
-      .select("*")
+      .select("id,email")
       .eq("id", companyId)
       .maybeSingle();
 
     if (companyError) {
-      return json(res, 500, { error: companyError.message });
+      return sendJson(res, 500, {
+        ok: false,
+        error: companyError.message,
+      });
     }
 
     if (!company) {
-      return json(res, 404, { error: "Empresa não encontrada." });
+      return sendJson(res, 404, {
+        ok: false,
+        error: "Empresa não encontrada.",
+      });
     }
 
-    const companyEmail = normalizeEmail(company.email);
-
     if (
-      companyEmail === normalizeEmail(officialEmail) &&
-      ["cancel_premium", "block"].includes(action)
+      normalizeEmail(company.email) === normalizeEmail(officialEmail) &&
+      (action === "cancel_premium" || action === "block")
     ) {
-      return json(res, 403, {
+      return sendJson(res, 403, {
+        ok: false,
         error: "A conta oficial não pode ser bloqueada nem voltar ao gratuito.",
       });
     }
 
-    const updatedCompany = await updateCompanyWithFallbacks(
-      supabaseAdmin,
-      companyId,
-      getActionPayloads(action)
-    );
+    const { error: updateError } = await supabaseAdmin
+      .from("companies")
+      .update({
+        ...payload,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", companyId);
 
-    return json(res, 200, {
+    if (updateError) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: updateError.message,
+        code: updateError.code || null,
+      });
+    }
+
+    return sendJson(res, 200, {
       ok: true,
       action,
-      company: updatedCompany,
+      companyId,
+      message: "Empresa atualizada com sucesso.",
     });
   } catch (error: any) {
-    console.error("Erro ao atualizar empresa:", error);
+    console.error("update-company fatal error:", error);
 
-    return json(res, 500, {
-      error: error?.message || "Erro ao atualizar empresa.",
+    return sendJson(res, 500, {
+      ok: false,
+      error: error?.message || "Erro interno ao atualizar empresa.",
+      stack: process.env.NODE_ENV === "development" ? error?.stack : undefined,
     });
   }
 }
