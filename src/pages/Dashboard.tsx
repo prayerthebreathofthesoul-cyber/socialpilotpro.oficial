@@ -329,9 +329,11 @@ export default function Dashboard() {
   const getActivityDescription = (post: SupabasePost) => {
     if (post.status === "scheduled") {
       return post.scheduled_at
-        ? `Agendado para ${format(new Date(post.scheduled_at), "dd/MM 'às' HH:mm", {
-            locale: ptBR,
-          })}`
+        ? `Agendado para ${format(
+            new Date(post.scheduled_at),
+            "dd/MM 'às' HH:mm",
+            { locale: ptBR }
+          )}`
         : "Post agendado para publicação automática.";
     }
 
@@ -412,9 +414,18 @@ export default function Dashboard() {
   };
 
   const getStatusClasses = (status: PostStatus) => {
-    if (status === "scheduled") return "bg-blue-50 text-blue-700 border border-blue-200";
-    if (status === "published") return "bg-green-50 text-green-700 border border-green-200";
-    if (status === "failed") return "bg-red-50 text-red-700 border border-red-200";
+    if (status === "scheduled") {
+      return "bg-blue-50 text-blue-700 border border-blue-200";
+    }
+
+    if (status === "published") {
+      return "bg-green-50 text-green-700 border border-green-200";
+    }
+
+    if (status === "failed") {
+      return "bg-red-50 text-red-700 border border-red-200";
+    }
+
     return "bg-muted text-muted-foreground border border-border";
   };
 
@@ -427,21 +438,27 @@ export default function Dashboard() {
 
   const getPostDateLabel = (post: SupabasePost) => {
     if (post.status === "scheduled" && post.scheduled_at) {
-      return `Agendado para ${format(new Date(post.scheduled_at), "dd/MM/yyyy 'às' HH:mm", {
-        locale: ptBR,
-      })}`;
+      return `Agendado para ${format(
+        new Date(post.scheduled_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
     }
 
     if (post.status === "published" && post.published_at) {
-      return `Publicado em ${format(new Date(post.published_at), "dd/MM/yyyy 'às' HH:mm", {
-        locale: ptBR,
-      })}`;
+      return `Publicado em ${format(
+        new Date(post.published_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
     }
 
     if (post.status === "failed") {
-      return `Falhou em ${format(new Date(post.updated_at || post.created_at), "dd/MM/yyyy 'às' HH:mm", {
-        locale: ptBR,
-      })}`;
+      return `Falhou em ${format(
+        new Date(post.updated_at || post.created_at),
+        "dd/MM/yyyy 'às' HH:mm",
+        { locale: ptBR }
+      )}`;
     }
 
     return `Criado em ${format(new Date(post.created_at), "dd/MM/yyyy", {
@@ -573,8 +590,8 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-8">
-        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
-          <div>
+        <div className="flex flex-col md:flex-row justify-between md:items-start gap-4">
+          <div className="flex-1">
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
 
             <p className="text-muted-foreground mt-1">
@@ -623,7 +640,297 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* mantenha daqui para baixo igual ao seu código atual */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("scheduled")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("scheduled");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-blue-200 ${
+              activeStatusFilter === "scheduled"
+                ? "bg-blue-50 ring-2 ring-blue-500"
+                : "bg-white"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-blue-700">
+                Agendados
+              </CardTitle>
+              <CalendarClock className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold text-blue-700">
+                  {statusCounts.scheduled}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("draft")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("draft");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-purple-200 ${
+              activeStatusFilter === "draft"
+                ? "bg-purple-50 ring-2 ring-purple-500"
+                : "bg-white"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-purple-700">
+                Rascunhos
+              </CardTitle>
+              <FileEdit className="h-4 w-4 text-purple-600" />
+            </CardHeader>
+
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold text-purple-700">
+                  {statusCounts.draft}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("published")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("published");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-green-200 ${
+              activeStatusFilter === "published"
+                ? "bg-green-50 ring-2 ring-green-500"
+                : "bg-white"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-green-700">
+                Publicados
+              </CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            </CardHeader>
+
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold text-green-700">
+                  {statusCounts.published}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveStatusFilter("failed")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setActiveStatusFilter("failed");
+            }}
+            className={`cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 border-red-200 ${
+              activeStatusFilter === "failed"
+                ? "bg-red-50 ring-2 ring-red-500"
+                : "bg-white"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <CardTitle className="text-sm font-medium text-red-700">
+                Falhos
+              </CardTitle>
+
+              <AlertCircle className="h-4 w-4 text-red-600" />
+            </CardHeader>
+
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold text-red-700">
+                  {statusCounts.failed}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-4 gap-3">
+                <h2 className="text-xl font-semibold tracking-tight">
+                  {getPostsTitle()}
+                </h2>
+
+                <div className="flex items-center gap-2">
+                  {activeStatusFilter !== "all" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActiveStatusFilter("all")}
+                    >
+                      Ver todos
+                    </Button>
+                  ) : null}
+
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/calendar">
+                      Ver Calendário <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+
+              {isLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Skeleton className="h-[300px] rounded-xl" />
+                  <Skeleton className="h-[300px] rounded-xl" />
+                </div>
+              ) : recentPosts.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch">
+                  {recentPosts.map((post) => renderPostCard(post))}
+                </div>
+              ) : (
+                <Card className="flex flex-col items-center justify-center p-12 text-center h-64 border-dashed">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+                    <CalendarClock className="h-6 w-6 text-primary" />
+                  </div>
+
+                  <h3 className="text-lg font-semibold mb-2">
+                    Nenhum post encontrado
+                  </h3>
+
+                  <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+                    {getEmptyPostsMessage()}
+                  </p>
+
+                  <Button asChild>
+                    <Link href="/posts/new">Criar Primeiro Post</Link>
+                  </Button>
+                </Card>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Avisos Importantes</CardTitle>
+              </CardHeader>
+
+              <CardContent className="space-y-4">
+                {isLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                ) : visibleAlerts.length > 0 ? (
+                  visibleAlerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className={`p-3 rounded-md text-sm border-l-4 ${
+                        alert.severity === "error"
+                          ? "bg-red-50 border-red-500 text-red-800 dark:bg-red-950/20"
+                          : alert.severity === "warning"
+                            ? "bg-amber-50 border-amber-500 text-amber-800 dark:bg-amber-950/20"
+                            : "bg-blue-50 border-blue-500 text-blue-800 dark:bg-blue-950/20"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <span>{alert.message}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-start gap-2 rounded-md border-l-4 border-green-500 bg-green-50 p-3 text-sm text-green-800 dark:bg-green-950/20">
+                    <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>
+                      Tudo certo! Suas redes sociais estão conectadas para
+                      publicação automática.
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Atividade Recente</CardTitle>
+              </CardHeader>
+
+              <CardContent>
+                {isLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((item) => (
+                      <div key={item} className="flex gap-3">
+                        <Skeleton className="w-2 h-2 rounded-full mt-2" />
+
+                        <div className="space-y-2 flex-1">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-3 w-24" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : recentActivity.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentActivity.map((activity) => (
+                      <div key={activity.id} className="flex gap-3 items-start">
+                        <div
+                          className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${getActivityDotClass(
+                            activity.status
+                          )}`}
+                        />
+
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium leading-snug">
+                            <span className="text-muted-foreground font-normal">
+                              {activity.action}
+                            </span>
+                            <br />
+                            <span className="font-semibold">
+                              {activity.postTitle}
+                            </span>
+                          </p>
+
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                            {activity.description}
+                          </p>
+
+                          <span className="text-xs text-muted-foreground">
+                            {format(
+                              new Date(activity.timestamp),
+                              "dd/MM 'às' HH:mm",
+                              { locale: ptBR }
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    Nenhuma atividade recente.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </Layout>
   );
