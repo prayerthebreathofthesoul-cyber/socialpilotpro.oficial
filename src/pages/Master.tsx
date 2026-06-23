@@ -3,38 +3,38 @@ import { Layout } from "@/components/layout/Layout";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  BarChart3,
-  Building2,
+  ShieldCheck,
   Crown,
   Lock,
-  RefreshCcw,
-  Search,
-  ShieldCheck,
-  Trash2,
   Unlock,
+  Search,
+  Building2,
   Users,
+  BarChart3,
+  RefreshCcw,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import {
-  useDeleteStore,
   useListStores,
   useUpdateStore,
+  useDeleteStore,
   type StoreRecord,
 } from "@/lib/mock-api";
 
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
 const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
-const PREMIUM_DAYS = 30;
+const FREE_PLAN_POST_LIMIT = 3;
 
 type MasterStore = Partial<Omit<StoreRecord, "id">> & {
   id: number | string;
@@ -56,8 +56,6 @@ type MasterStore = Partial<Omit<StoreRecord, "id">> & {
   planStatus?: "active" | "blocked" | "cancelled" | string | null;
   postsLimit?: number | null;
   postsUsed?: number | null;
-  premiumStartedAt?: string | null;
-  premiumExpiresAt?: string | null;
   instagramConnected?: boolean;
   facebookConnected?: boolean;
   tiktokConnected?: boolean;
@@ -72,11 +70,6 @@ function normalizeText(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
 
-function toNumber(value: unknown, fallback = 0) {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : fallback;
-}
-
 function getStoreCompanyId(store: MasterStore) {
   return store.company_id || store.companyId || String(store.id);
 }
@@ -85,10 +78,31 @@ function isNumericId(id: number | string): id is number {
   return typeof id === "number" && Number.isFinite(id);
 }
 
-function isOfficialStore(store: MasterStore) {
+function toNumber(value: unknown, fallback = 0) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeFreePlanPostLimit(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return FREE_PLAN_POST_LIMIT;
+  }
+
+  const limit = toNumber(value, FREE_PLAN_POST_LIMIT);
+
+  if (limit <= 0) {
+    return FREE_PLAN_POST_LIMIT;
+  }
+
+  return Math.min(limit, FREE_PLAN_POST_LIMIT);
+}
+
+function isMissingColumnError(error: any) {
+  const message = String(error?.message || "").toLowerCase();
   return (
-    store.isMaster === true ||
-    normalizeEmail(store.email) === normalizeEmail(OFFICIAL_EMAIL)
+    error?.code === "42703" ||
+    message.includes("column") ||
+    message.includes("schema cache")
   );
 }
 
@@ -103,11 +117,11 @@ async function readApiResponse(response: Response) {
 
   if (response.status === 404 || text.toLowerCase().includes("page")) {
     throw new Error(
-      "A API solicitada não foi encontrada no servidor. Verifique se o arquivo existe dentro da pasta api/master."
+      "A API /api/master/delete-company não foi encontrada no servidor. Publique o arquivo api/master/delete-company.ts antes de excluir empresas."
     );
   }
 
-  throw new Error(text || `Erro HTTP ${response.status}.`);
+  throw new Error(text || `Erro HTTP ${response.status} ao excluir empresa.`);
 }
 
 function normalizeStore(store: MasterStore): MasterStore {
@@ -136,7 +150,6 @@ function getStoreMergeKey(store: MasterStore) {
   if (email) return `email:${email}`;
   if (documentNumber) return `document:${documentNumber}`;
   if (companyId) return `company:${companyId}`;
-
   return `id:${String(store.id)}`;
 }
 
@@ -169,16 +182,13 @@ function mergeStoreData(current: MasterStore, next: MasterStore): MasterStore {
     postsLimit:
       currentIsPremium || nextIsPremium
         ? null
-        : next.postsLimit ?? current.postsLimit ?? 15,
+        : normalizeFreePlanPostLimit(next.postsLimit ?? current.postsLimit),
     postsUsed: Math.max(toNumber(current.postsUsed, 0), toNumber(next.postsUsed, 0)),
-    premiumStartedAt: next.premiumStartedAt ?? current.premiumStartedAt ?? null,
-    premiumExpiresAt: next.premiumExpiresAt ?? current.premiumExpiresAt ?? null,
     instagramConnected:
       current.instagramConnected === true || next.instagramConnected === true,
     facebookConnected:
       current.facebookConnected === true || next.facebookConnected === true,
-    tiktokConnected:
-      current.tiktokConnected === true || next.tiktokConnected === true,
+    tiktokConnected: current.tiktokConnected === true || next.tiktokConnected === true,
     isMaster: current.isMaster === true || next.isMaster === true,
   });
 }
@@ -187,20 +197,32 @@ function dedupeStores(stores: MasterStore[]) {
   const map = new Map<string, MasterStore>();
 
   stores.forEach((store) => {
-    const normalized = normalizeStore(store);
-    const key = getStoreMergeKey(normalized);
+    const normalizedStore = normalizeStore(store);
+    const key = getStoreMergeKey(normalizedStore);
     const current = map.get(key);
 
-    map.set(key, current ? mergeStoreData(current, normalized) : normalized);
+    map.set(
+      key,
+      current ? mergeStoreData(current, normalizedStore) : normalizedStore
+    );
   });
 
   return Array.from(map.values());
 }
 
 function mergeStores(mockStores: MasterStore[], supabaseStores: MasterStore[]) {
-  return supabaseStores.length > 0
-    ? dedupeStores(supabaseStores)
-    : dedupeStores(mockStores);
+  if (supabaseStores.length > 0) {
+    return dedupeStores(supabaseStores);
+  }
+
+  return dedupeStores(mockStores);
+}
+
+function isOfficialStore(store: MasterStore) {
+  return (
+    store.isMaster === true ||
+    normalizeEmail(store.email) === normalizeEmail(OFFICIAL_EMAIL)
+  );
 }
 
 export default function Master() {
@@ -210,7 +232,9 @@ export default function Master() {
   const [supabaseStores, setSupabaseStores] = useState<MasterStore[]>([]);
   const [isLoadingSupabase, setIsLoadingSupabase] = useState(false);
   const [storeToDelete, setStoreToDelete] = useState<MasterStore | null>(null);
-  const [deletingStoreId, setDeletingStoreId] = useState<number | string | null>(null);
+  const [deletingStoreId, setDeletingStoreId] = useState<number | string | null>(
+    null
+  );
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
   const hasMasterAccess =
@@ -222,9 +246,6 @@ export default function Master() {
   const { data: stores = [], isLoading } = useListStores();
   const updateStore = useUpdateStore();
   const deleteStore = useDeleteStore();
-
-  const buttonMotionClass =
-    "transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-lg active:translate-y-0 active:scale-95 disabled:hover:translate-y-0 disabled:hover:scale-100 disabled:hover:shadow-none";
 
   const getActionKey = (store: MasterStore, action: string) => {
     return `${getStoreMergeKey(store)}:${action}`;
@@ -238,6 +259,9 @@ export default function Master() {
     return Boolean(runningAction?.startsWith(`${getStoreMergeKey(store)}:`));
   };
 
+  const buttonMotionClass =
+    "transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:shadow-lg active:translate-y-0 active:scale-95 disabled:hover:translate-y-0 disabled:hover:scale-100 disabled:hover:shadow-none";
+
   const loadSupabaseCompanies = async () => {
     setIsLoadingSupabase(true);
 
@@ -246,7 +270,9 @@ export default function Master() {
         .from("companies")
         .select("*");
 
-      if (companiesError) throw companiesError;
+      if (companiesError) {
+        throw companiesError;
+      }
 
       const companyRows = companies || [];
       const companyIds = companyRows.map((company: any) => company.id);
@@ -268,14 +294,20 @@ export default function Master() {
       }
 
       if (socialAccountsResult.error) {
-        console.warn("Erro ao carregar contas sociais no Master:", socialAccountsResult.error);
+        console.warn(
+          "Erro ao carregar contas sociais no Master:",
+          socialAccountsResult.error
+        );
       }
 
       const profileRows = profilesResult.data || [];
       const socialRows = socialAccountsResult.data || [];
 
       const realStores = companyRows.map((company: any) => {
-        const profile = profileRows.find((item: any) => item.company_id === company.id);
+        const profile = profileRows.find(
+          (item: any) => item.company_id === company.id
+        );
+
         const companyAccounts = socialRows.filter(
           (item: any) => item.company_id === company.id
         );
@@ -309,22 +341,24 @@ export default function Master() {
           cnpj: company.cnpj || "",
           cpf: company.cpf || "",
           documentType: company.document_type || null,
-          documentNumber: company.document_number || company.cnpj || company.cpf || "",
+          documentNumber:
+            company.document_number || company.cnpj || company.cpf || "",
           plan,
           planStatus: blocked ? "blocked" : company.plan_status || "active",
           postsLimit:
             plan === "premium"
               ? null
-              : toNumber(company.posts_limit ?? company.postsLimit, 15),
+              : normalizeFreePlanPostLimit(
+                  company.posts_limit ?? company.postsLimit
+                ),
           postsUsed: toNumber(company.posts_used ?? company.postsUsed, 0),
-          premiumStartedAt: company.premium_started_at || null,
-          premiumExpiresAt: company.premium_expires_at || null,
           instagramConnected: isPlatformConnected("instagram"),
           facebookConnected: isPlatformConnected("facebook"),
           tiktokConnected: isPlatformConnected("tiktok"),
           isMaster:
             company.is_master === true ||
-            normalizeEmail(company.email || profile?.email) === normalizeEmail(OFFICIAL_EMAIL),
+            normalizeEmail(company.email || profile?.email) ===
+              normalizeEmail(OFFICIAL_EMAIL),
         } as MasterStore);
       });
 
@@ -344,7 +378,9 @@ export default function Master() {
   }, [stores, supabaseStores]);
 
   useEffect(() => {
-    if (allowed) loadSupabaseCompanies();
+    if (allowed) {
+      loadSupabaseCompanies();
+    }
   }, [allowed]);
 
   const filteredStores = useMemo(() => {
@@ -368,10 +404,20 @@ export default function Master() {
   }, [localStores, search]);
 
   const isLoadingCompanies = isLoading || isLoadingSupabase;
+
   const totalStores = localStores.length;
-  const premiumStores = localStores.filter((store) => store.plan === "premium").length;
-  const freeStores = localStores.filter((store) => store.plan !== "premium").length;
-  const blockedStores = localStores.filter((store) => store.planStatus === "blocked").length;
+
+  const premiumStores = localStores.filter(
+    (store) => store.plan === "premium"
+  ).length;
+
+  const freeStores = localStores.filter(
+    (store) => store.plan !== "premium"
+  ).length;
+
+  const blockedStores = localStores.filter(
+    (store) => store.planStatus === "blocked"
+  ).length;
 
   function handleLogin() {
     if (password !== MASTER_PASSWORD) {
@@ -397,64 +443,82 @@ export default function Master() {
   ) {
     const companyId = getStoreCompanyId(store);
 
-    if (!companyId) {
-      throw new Error("ID da empresa não encontrado.");
+    if (!companyId) return;
+
+    let lastError: any = null;
+
+    for (const payload of payloads) {
+      const payloadWithUpdatedAt = {
+        ...payload,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from("companies")
+        .update(payloadWithUpdatedAt)
+        .eq("id", companyId);
+
+      if (!error) return;
+
+      lastError = error;
+
+      if (!isMissingColumnError(error)) {
+        break;
+      }
+
+      const { error: retryError } = await supabase
+        .from("companies")
+        .update(payload)
+        .eq("id", companyId);
+
+      if (!retryError) return;
+
+      lastError = retryError;
+
+      if (!isMissingColumnError(retryError)) {
+        break;
+      }
     }
 
-    const payload = payloads[0];
-
-    if (!payload) {
-      throw new Error("Nenhuma alteração foi enviada.");
+    if (lastError) {
+      throw lastError;
     }
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.access_token) {
-      throw new Error("Sessão expirada. Faça login novamente.");
-    }
-
-    const response = await fetch("/api/master/update-company", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        companyId,
-        payload,
-      }),
-    });
-
-    const result = await readApiResponse(response);
-
-    if (!response.ok) {
-      throw new Error(result?.error || "Erro ao salvar alteração da empresa.");
-    }
-
-    return result;
   }
 
   function updateStoreLocal(storeId: number | string, data: Partial<MasterStore>) {
     setLocalStores((currentStores) =>
       currentStores.map((store) =>
-        store.id === storeId ? { ...store, ...data } : store
+        store.id === storeId
+          ? {
+              ...store,
+              ...data,
+            }
+          : store
       )
     );
 
     setSupabaseStores((currentStores) =>
       currentStores.map((store) =>
         store.id === storeId || getStoreCompanyId(store) === String(storeId)
-          ? { ...store, ...data }
+          ? {
+              ...store,
+              ...data,
+            }
           : store
       )
     );
 
     if (isNumericId(storeId)) {
       updateStore.mutate(
-        { id: storeId, data: data as Partial<StoreRecord> },
-        { onError: () => toast.error("Erro ao salvar alteração local.") }
+        {
+          id: storeId,
+          data: data as Partial<StoreRecord>,
+        },
+        {
+          onError: () => {
+            toast.error("Erro ao salvar alteração local.");
+          },
+        }
       );
     }
   }
@@ -468,14 +532,6 @@ export default function Master() {
     setRunningAction(getActionKey(store, "premium"));
 
     try {
-      const premiumStartedAt = new Date();
-      const premiumExpiresAt = new Date(premiumStartedAt);
-
-      premiumExpiresAt.setDate(premiumExpiresAt.getDate() + PREMIUM_DAYS);
-
-      const premiumStartedAtIso = premiumStartedAt.toISOString();
-      const premiumExpiresAtIso = premiumExpiresAt.toISOString();
-
       await updateCompanyInSupabase(store, [
         {
           plan: "premium",
@@ -483,8 +539,14 @@ export default function Master() {
           status: "active",
           is_blocked: false,
           posts_limit: null,
-          premium_started_at: premiumStartedAtIso,
-          premium_expires_at: premiumExpiresAtIso,
+        },
+        {
+          plan: "premium",
+          plan_status: "active",
+          posts_limit: null,
+        },
+        {
+          plan: "premium",
         },
       ]);
 
@@ -492,15 +554,14 @@ export default function Master() {
         plan: "premium",
         planStatus: "active",
         postsLimit: null,
-        premiumStartedAt: premiumStartedAtIso,
-        premiumExpiresAt: premiumExpiresAtIso,
       });
 
-      await loadSupabaseCompanies();
-      toast.success(`Plano Premium ativado por ${PREMIUM_DAYS} dias.`);
+      toast.success("Plano Premium ativado.");
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Plano Premium não foi salvo no banco.");
+      toast.error(
+        "Plano alterado na tela, mas não foi salvo no Supabase. Verifique as colunas/permissões da tabela companies."
+      );
     } finally {
       setRunningAction(null);
     }
@@ -521,25 +582,30 @@ export default function Master() {
           plan_status: "active",
           status: "active",
           is_blocked: false,
-          posts_limit: 15,
-          premium_started_at: null,
-          premium_expires_at: null,
+          posts_limit: FREE_PLAN_POST_LIMIT,
+        },
+        {
+          plan: "free",
+          plan_status: "active",
+          posts_limit: FREE_PLAN_POST_LIMIT,
+        },
+        {
+          plan: "free",
         },
       ]);
 
       updateStoreLocal(store.id, {
         plan: "free",
         planStatus: "active",
-        postsLimit: 15,
-        premiumStartedAt: null,
-        premiumExpiresAt: null,
+        postsLimit: FREE_PLAN_POST_LIMIT,
       });
 
-      await loadSupabaseCompanies();
       toast.success("Premium cancelado. Conta voltou para o plano gratuito.");
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Cancelamento do Premium não foi salvo no banco.");
+      toast.error(
+        "Plano alterado na tela, mas não foi salvo no Supabase. Verifique as colunas/permissões da tabela companies."
+      );
     } finally {
       setRunningAction(null);
     }
@@ -560,14 +626,27 @@ export default function Master() {
           status: "blocked",
           is_blocked: true,
         },
+        {
+          plan_status: "blocked",
+        },
+        {
+          status: "blocked",
+        },
+        {
+          is_blocked: true,
+        },
       ]);
 
-      updateStoreLocal(store.id, { planStatus: "blocked" });
-      await loadSupabaseCompanies();
+      updateStoreLocal(store.id, {
+        planStatus: "blocked",
+      });
+
       toast.success("Conta bloqueada.");
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Bloqueio não foi salvo no banco.");
+      toast.error(
+        "Conta bloqueada na tela, mas não foi salva no Supabase. Verifique se existe coluna plan_status, status ou is_blocked."
+      );
     } finally {
       setRunningAction(null);
     }
@@ -583,14 +662,27 @@ export default function Master() {
           status: "active",
           is_blocked: false,
         },
+        {
+          plan_status: "active",
+        },
+        {
+          status: "active",
+        },
+        {
+          is_blocked: false,
+        },
       ]);
 
-      updateStoreLocal(store.id, { planStatus: "active" });
-      await loadSupabaseCompanies();
+      updateStoreLocal(store.id, {
+        planStatus: "active",
+      });
+
       toast.success("Usuário ativado.");
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Ativação do usuário não foi salva no banco.");
+      toast.error(
+        "Usuário ativado na tela, mas não foi salvo no Supabase. Verifique se existe coluna plan_status, status ou is_blocked."
+      );
     } finally {
       setRunningAction(null);
     }
@@ -604,14 +696,21 @@ export default function Master() {
         {
           posts_used: 0,
         },
+        {
+          postsUsed: 0,
+        },
       ]);
 
-      updateStoreLocal(store.id, { postsUsed: 0 });
-      await loadSupabaseCompanies();
+      updateStoreLocal(store.id, {
+        postsUsed: 0,
+      });
+
       toast.success("Uso mensal zerado.");
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Uso mensal não foi salvo no banco.");
+      toast.error(
+        "Uso zerado na tela, mas não foi salvo no Supabase. Verifique se existe coluna posts_used."
+      );
     } finally {
       setRunningAction(null);
     }
@@ -644,13 +743,23 @@ export default function Master() {
         return;
       }
 
-      const companyId = store.company_id || store.companyId || getStoreCompanyId(store);
+      const storeData = store as MasterStore & {
+        user_id?: string;
+        userId?: string;
+        company_id?: string;
+        companyId?: string;
+        auth_user_id?: string;
+        authUserId?: string;
+      };
+
+      const companyId =
+        storeData.company_id || storeData.companyId || getStoreCompanyId(store);
 
       const userId =
-        store.user_id ||
-        store.userId ||
-        store.auth_user_id ||
-        store.authUserId ||
+        storeData.user_id ||
+        storeData.userId ||
+        storeData.auth_user_id ||
+        storeData.authUserId ||
         null;
 
       const response = await fetch("/api/master/delete-company", {
@@ -692,7 +801,9 @@ export default function Master() {
 
       if (isNumericId(store.id)) {
         deleteStore.mutate(
-          { id: store.id },
+          {
+            id: store.id,
+          },
           {
             onError: () => {
               console.warn(
@@ -726,7 +837,8 @@ export default function Master() {
             <CardTitle className="text-2xl">Painel Master</CardTitle>
 
             <CardDescription>
-              Área restrita para controlar planos, bloqueios e empresas do SocialPilot Pro.
+              Área restrita para controlar planos, bloqueios e empresas do
+              SocialPilot Pro.
             </CardDescription>
           </CardHeader>
 
@@ -741,7 +853,10 @@ export default function Master() {
               }}
             />
 
-            <Button className="w-full bg-blue-950 hover:bg-blue-900" onClick={handleLogin}>
+            <Button
+              className="w-full bg-blue-950 hover:bg-blue-900"
+              onClick={handleLogin}
+            >
               Entrar no Painel Master
             </Button>
 
@@ -757,65 +872,43 @@ export default function Master() {
   return (
     <Layout>
       {storeToDelete && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm"
-          onClick={() => {
-            if (deletingStoreId !== storeToDelete.id) {
-              setStoreToDelete(null);
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
-                <Trash2 className="h-7 w-7" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <Trash2 className="h-5 w-5" />
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold text-slate-950">Excluir empresa</h2>
+                <h2 className="text-xl font-bold text-slate-950">
+                  Excluir empresa?
+                </h2>
 
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Você está prestes a excluir esta empresa. Essa ação removerá o
-                  cadastro, os dados vinculados e liberará o e-mail/CPF/CNPJ para
-                  um novo cadastro.
+                <p className="mt-1 text-sm text-slate-600">
+                  Esta ação removerá a empresa, o usuário vinculado e liberará
+                  o e-mail/CPF/CNPJ para um novo cadastro.
                 </p>
               </div>
             </div>
 
-            <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
-                Empresa selecionada
+            <div className="rounded-lg border border-red-100 bg-red-50 p-4">
+              <p className="text-sm text-slate-700">
+                Empresa selecionada:
               </p>
 
-              <p className="mt-2 text-lg font-bold text-slate-950">
+              <p className="mt-1 font-bold text-slate-950">
                 {storeToDelete.name || "Empresa sem nome"}
               </p>
 
               <p className="mt-1 text-sm text-slate-600">
                 {storeToDelete.email || "E-mail não informado"}
               </p>
-
-              <p className="mt-1 text-sm text-slate-600">
-                CPF/CNPJ:{" "}
-                {storeToDelete.documentNumber ||
-                  storeToDelete.cnpj ||
-                  storeToDelete.cpf ||
-                  "Não informado"}
-              </p>
-            </div>
-
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Essa ação não pode ser desfeita pelo painel. Confirme somente se
-              tiver certeza que deseja remover esta empresa.
             </div>
 
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <Button
                 variant="outline"
-                className={`${buttonMotionClass} h-11 px-5`}
+                className={buttonMotionClass}
                 onClick={() => setStoreToDelete(null)}
                 disabled={deletingStoreId === storeToDelete.id}
               >
@@ -824,7 +917,7 @@ export default function Master() {
 
               <Button
                 variant="destructive"
-                className={`${buttonMotionClass} h-11 bg-red-600 px-5 hover:bg-red-700 ${
+                className={`${buttonMotionClass} hover:bg-red-700 ${
                   deletingStoreId === storeToDelete.id ? "animate-pulse" : ""
                 }`}
                 onClick={confirmRemoveStore}
@@ -843,7 +936,9 @@ export default function Master() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-950">Painel Master</h1>
+            <h1 className="text-3xl font-bold text-slate-950">
+              Painel Master
+            </h1>
 
             <p className="text-slate-600">
               Controle empresas, planos, limites e bloqueios do SocialPilot Pro.
@@ -880,6 +975,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Empresas</p>
                 <p className="text-3xl font-bold">{totalStores}</p>
               </div>
+
               <Building2 className="h-8 w-8 text-blue-950" />
             </CardContent>
           </Card>
@@ -890,6 +986,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Premium</p>
                 <p className="text-3xl font-bold">{premiumStores}</p>
               </div>
+
               <Crown className="h-8 w-8 text-orange-600" />
             </CardContent>
           </Card>
@@ -900,6 +997,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Gratuitas</p>
                 <p className="text-3xl font-bold">{freeStores}</p>
               </div>
+
               <Users className="h-8 w-8 text-emerald-600" />
             </CardContent>
           </Card>
@@ -910,6 +1008,7 @@ export default function Master() {
                 <p className="text-sm text-slate-500">Bloqueadas</p>
                 <p className="text-3xl font-bold">{blockedStores}</p>
               </div>
+
               <Lock className="h-8 w-8 text-red-600" />
             </CardContent>
           </Card>
@@ -920,13 +1019,16 @@ export default function Master() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle>Empresas cadastradas</CardTitle>
+
                 <CardDescription>
-                  Altere planos, bloqueie contas, exclua empresas comuns e acompanhe o uso mensal.
+                  Altere planos, bloqueie contas, exclua empresas comuns e
+                  acompanhe o uso mensal.
                 </CardDescription>
               </div>
 
               <div className="relative w-full lg:w-80">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
                 <Input
                   className="pl-9"
                   placeholder="Buscar empresa, email, CPF/CNPJ ou plano..."
@@ -954,14 +1056,23 @@ export default function Master() {
                   const protectedOfficial = isOfficialStore(store);
                   const storeBusy = isStoreBusy(store);
                   const activatingPremium = isRunningAction(store, "premium");
-                  const cancellingPremium = isRunningAction(store, "cancel-premium");
+                  const cancellingPremium = isRunningAction(
+                    store,
+                    "cancel-premium"
+                  );
                   const blockingStore = isRunningAction(store, "block");
                   const unblockingStore = isRunningAction(store, "unblock");
                   const resettingUsage = isRunningAction(store, "reset");
                   const deletingStore = deletingStoreId === store.id;
-                  const documentNumber = store.documentNumber || store.cnpj || store.cpf || "";
+
+                  const documentNumber =
+                    store.documentNumber || store.cnpj || store.cpf || "";
+
                   const postsUsed = store.postsUsed ?? 0;
-                  const postsLimit = isPremium ? "Ilimitado" : store.postsLimit ?? 15;
+
+                  const postsLimit = isPremium
+                    ? "Ilimitado"
+                    : normalizeFreePlanPostLimit(store.postsLimit);
 
                   return (
                     <div
@@ -1002,16 +1113,20 @@ export default function Master() {
 
                           <div className="grid gap-1 text-sm text-slate-600 md:grid-cols-2">
                             <p>
-                              <strong>Email:</strong> {store.email || "Não informado"}
+                              <strong>Email:</strong>{" "}
+                              {store.email || "Não informado"}
                             </p>
+
                             <p>
                               <strong>Responsável:</strong>{" "}
                               {store.ownerName || "Não informado"}
                             </p>
+
                             <p>
                               <strong>Segmento:</strong>{" "}
                               {store.segment || "Não informado"}
                             </p>
+
                             <p>
                               <strong>CPF/CNPJ:</strong>{" "}
                               {documentNumber || "Não informado"}
@@ -1019,16 +1134,31 @@ export default function Master() {
                           </div>
 
                           <div className="flex flex-wrap gap-2 pt-2">
-                            <Badge variant={store.instagramConnected ? "default" : "outline"}>
-                              Instagram {store.instagramConnected ? "conectado" : "off"}
+                            <Badge
+                              variant={
+                                store.instagramConnected ? "default" : "outline"
+                              }
+                            >
+                              Instagram{" "}
+                              {store.instagramConnected ? "conectado" : "off"}
                             </Badge>
 
-                            <Badge variant={store.facebookConnected ? "default" : "outline"}>
-                              Facebook {store.facebookConnected ? "conectado" : "off"}
+                            <Badge
+                              variant={
+                                store.facebookConnected ? "default" : "outline"
+                              }
+                            >
+                              Facebook{" "}
+                              {store.facebookConnected ? "conectado" : "off"}
                             </Badge>
 
-                            <Badge variant={store.tiktokConnected ? "default" : "outline"}>
-                              TikTok {store.tiktokConnected ? "conectado" : "off"}
+                            <Badge
+                              variant={
+                                store.tiktokConnected ? "default" : "outline"
+                              }
+                            >
+                              TikTok{" "}
+                              {store.tiktokConnected ? "conectado" : "off"}
                             </Badge>
                           </div>
                         </div>
@@ -1042,11 +1172,16 @@ export default function Master() {
                           <div className="space-y-1 text-sm text-slate-600">
                             <p>
                               Posts usados:{" "}
-                              <strong className="text-slate-950">{postsUsed}</strong>
+                              <strong className="text-slate-950">
+                                {postsUsed}
+                              </strong>
                             </p>
+
                             <p>
                               Limite:{" "}
-                              <strong className="text-slate-950">{postsLimit}</strong>
+                              <strong className="text-slate-950">
+                                {postsLimit}
+                              </strong>
                             </p>
                           </div>
                         </div>
@@ -1068,7 +1203,9 @@ export default function Master() {
                                 disabled={updateStore.isPending || storeBusy}
                               >
                                 <Crown className="mr-2 h-4 w-4" />
-                                {activatingPremium ? "Ativando..." : "Ativar Premium"}
+                                {activatingPremium
+                                  ? "Ativando..."
+                                  : "Ativar Premium"}
                               </Button>
                             ) : (
                               <Button
@@ -1079,7 +1216,9 @@ export default function Master() {
                                 onClick={() => cancelPremium(store)}
                                 disabled={updateStore.isPending || storeBusy}
                               >
-                                {cancellingPremium ? "Cancelando..." : "Cancelar Premium"}
+                                {cancellingPremium
+                                  ? "Cancelando..."
+                                  : "Cancelar Premium"}
                               </Button>
                             )}
 
@@ -1104,7 +1243,9 @@ export default function Master() {
                                 disabled={updateStore.isPending || storeBusy}
                               >
                                 <Unlock className="mr-2 h-4 w-4" />
-                                {unblockingStore ? "Ativando..." : "Ativar usuário"}
+                                {unblockingStore
+                                  ? "Ativando..."
+                                  : "Ativar usuário"}
                               </Button>
                             )}
                           </>
@@ -1132,7 +1273,9 @@ export default function Master() {
                             disabled={deletingStore || storeBusy}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            {deletingStore ? "Excluindo..." : "Excluir empresa"}
+                            {deletingStore
+                              ? "Excluindo..."
+                              : "Excluir empresa"}
                           </Button>
                         )}
                       </div>
