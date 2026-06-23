@@ -10,7 +10,8 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
-import { signInWithEmail } from "@/lib/auth";
+import { signInWithEmail, signOut } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,6 +34,28 @@ const loginSchema = z.object({
   password: z.string().min(1, { message: "Informe sua senha" }),
 });
 
+async function checkCompanyBlocked(email: string) {
+  const cleanEmail = email.trim().toLowerCase();
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("email", cleanEmail)
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  const company = data?.[0];
+
+  return (
+    company?.is_blocked === true ||
+    company?.plan_status === "blocked" ||
+    company?.status === "blocked"
+  );
+}
+
 export default function Login() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
@@ -49,14 +72,26 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await signInWithEmail(values.email, values.password);
+      const cleanEmail = values.email.trim().toLowerCase();
 
-      localStorage.setItem("socialpilot_user_email", values.email);
+      await signInWithEmail(cleanEmail, values.password);
+
+      const isBlocked = await checkCompanyBlocked(cleanEmail);
+
+      if (isBlocked) {
+        await signOut();
+        toast.error("Conta bloqueada. Entre em contato com o suporte.");
+        return;
+      }
+
+      localStorage.setItem("socialpilot_user_email", cleanEmail);
 
       toast.success("Login realizado com sucesso!");
       setLocation("/dashboard");
     } catch (error: any) {
       console.error(error);
+
+      await signOut();
 
       const message =
         error?.message === "Invalid login credentials"
@@ -115,9 +150,7 @@ export default function Login() {
               Bem-vindo de volta
             </CardTitle>
 
-            <CardDescription>
-              Entre na sua conta Social Pilot PRO
-            </CardDescription>
+            <CardDescription>Entre na sua conta Social Pilot PRO</CardDescription>
           </CardHeader>
 
           <CardContent>
@@ -179,11 +212,7 @@ export default function Login() {
                   )}
                 />
 
-                <Button
-                  type="submit"
-                  className="w-full mt-6"
-                  disabled={isLoading}
-                >
+                <Button type="submit" className="w-full mt-6" disabled={isLoading}>
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
