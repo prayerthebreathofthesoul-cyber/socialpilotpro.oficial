@@ -36,6 +36,13 @@ const MASTER_PASSWORD = "admin123";
 const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
 const FREE_PLAN_POST_LIMIT = 3;
 
+type MasterAction =
+  | "activate_premium"
+  | "cancel_premium"
+  | "block"
+  | "unblock"
+  | "reset_usage";
+
 type MasterStore = Partial<Omit<StoreRecord, "id">> & {
   id: number | string;
   companyId?: string;
@@ -162,6 +169,16 @@ async function readApiResponse(response: Response, endpointName = "API") {
   throw new Error(text || `Erro HTTP ${response.status} na API.`);
 }
 
+function isMissingApiError(error: any) {
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    message.includes("não foi encontrada") ||
+    message.includes("not found") ||
+    message.includes("404")
+  );
+}
+
 function normalizeStore(store: MasterStore): MasterStore {
   if (!isOfficialStore(store)) return store;
 
@@ -280,6 +297,107 @@ function getStorePatchFromCompany(company: any): Partial<MasterStore> {
         : normalizeFreePlanPostLimit(company?.posts_limit ?? company?.postsLimit),
     postsUsed: toNumber(company?.posts_used ?? company?.postsUsed, 0),
   };
+}
+
+function getMasterActionPayloads(action: MasterAction) {
+  if (action === "activate_premium") {
+    return [
+      {
+        plan: "premium",
+        plan_status: "active",
+        status: "active",
+        is_blocked: false,
+        posts_limit: null,
+      },
+      {
+        plan: "premium",
+        plan_status: "active",
+        posts_limit: null,
+      },
+      {
+        plan: "premium",
+      },
+    ];
+  }
+
+  if (action === "cancel_premium") {
+    return [
+      {
+        plan: "free",
+        plan_status: "active",
+        status: "active",
+        is_blocked: false,
+        posts_limit: FREE_PLAN_POST_LIMIT,
+      },
+      {
+        plan: "free",
+        plan_status: "active",
+        posts_limit: FREE_PLAN_POST_LIMIT,
+      },
+      {
+        plan: "free",
+      },
+    ];
+  }
+
+  if (action === "block") {
+    return [
+      {
+        plan_status: "blocked",
+        status: "blocked",
+        is_blocked: true,
+      },
+      {
+        plan_status: "blocked",
+      },
+      {
+        status: "blocked",
+      },
+      {
+        is_blocked: true,
+      },
+    ];
+  }
+
+  if (action === "unblock") {
+    return [
+      {
+        plan_status: "active",
+        status: "active",
+        is_blocked: false,
+      },
+      {
+        plan_status: "active",
+      },
+      {
+        status: "active",
+      },
+      {
+        is_blocked: false,
+      },
+    ];
+  }
+
+  return [
+    {
+      posts_used: 0,
+    },
+    {
+      postsUsed: 0,
+    },
+  ];
+}
+
+function isMissingColumnError(error: any) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    code === "42703" ||
+    message.includes("column") ||
+    message.includes("could not find") ||
+    message.includes("schema cache")
+  );
 }
 
 export default function Master() {
@@ -494,7 +612,76 @@ export default function Master() {
     toast.success("Você saiu do painel master.");
   }
 
-  async function updateCompanyInSupabase(store: MasterStore, action: string) {
+  async function updateCompanyDirectlyInSupabase(
+    store: MasterStore,
+    action: MasterAction
+  ) {
+    const companyId = getStoreCompanyId(store);
+
+    if (!companyId) {
+      throw new Error("Empresa sem companyId.");
+    }
+
+    const { data: currentCompany, error: currentCompanyError } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    if (currentCompanyError) {
+      throw currentCompanyError;
+    }
+
+    if (!currentCompany?.id) {
+      throw new Error("Empresa não encontrada no Supabase.");
+    }
+
+    const canUpdateTimestamp = Object.prototype.hasOwnProperty.call(
+      currentCompany,
+      "updated_at"
+    );
+
+    let lastError: any = null;
+
+    for (const payload of getMasterActionPayloads(action)) {
+      const updatePayload = canUpdateTimestamp
+        ? {
+            ...payload,
+            updated_at: new Date().toISOString(),
+          }
+        : payload;
+
+      const { data: updatedCompany, error } = await supabase
+        .from("companies")
+        .update(updatePayload)
+        .eq("id", companyId)
+        .select("*")
+        .maybeSingle();
+
+      if (!error && updatedCompany?.id) {
+        assertActionApplied(action, updatedCompany);
+        return updatedCompany;
+      }
+
+      lastError = error;
+
+      if (!isMissingColumnError(error)) {
+        break;
+      }
+    }
+
+    throw (
+      lastError ||
+      new Error(
+        "O Supabase não permitiu alterar a empresa. Verifique as políticas RLS da tabela companies."
+      )
+    );
+  }
+
+  async function updateCompanyInSupabase(
+    store: MasterStore,
+    action: MasterAction
+  ) {
     const companyId = getStoreCompanyId(store);
 
     if (!companyId) {
@@ -509,33 +696,44 @@ export default function Master() {
       throw new Error("Sessão expirada. Faça login novamente.");
     }
 
-    const response = await fetch("/api/master/update-company", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        companyId,
-        action,
-        email: store.email,
-        isOfficial: isOfficialStore(store),
-      }),
-    });
+    try {
+      const response = await fetch("/api/master/update-company", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          companyId,
+          action,
+          email: store.email,
+          isOfficial: isOfficialStore(store),
+        }),
+      });
 
-    const result = await readApiResponse(response, "/api/master/update-company");
+      const result = await readApiResponse(
+        response,
+        "/api/master/update-company"
+      );
 
-    if (!response.ok) {
-      throw new Error(result?.error || "Erro ao alterar empresa.");
+      if (!response.ok) {
+        throw new Error(result?.error || "Erro ao alterar empresa.");
+      }
+
+      assertCompanyUpdated(result?.company);
+      assertActionApplied(action, result.company);
+
+      return result.company;
+    } catch (error: any) {
+      if (!isMissingApiError(error)) {
+        throw error;
+      }
+
+      return updateCompanyDirectlyInSupabase(store, action);
     }
-
-    assertCompanyUpdated(result?.company);
-    assertActionApplied(action, result.company);
-
-    return result.company;
   }
 
-  async function runMasterCompanyAction(store: MasterStore, action: string) {
+  async function runMasterCompanyAction(store: MasterStore, action: MasterAction) {
     if (action === "activate_premium") {
       return updateCompanyInSupabase(store, action);
     }
