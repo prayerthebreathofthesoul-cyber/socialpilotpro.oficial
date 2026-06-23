@@ -14,6 +14,7 @@ import { clearAuthToken } from "@/lib/auth";
 const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
 const USER_EMAIL_KEY = "socialpilot_user_email";
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
+const OFFICIAL_LOGO_PATH = "/ícone_social_pilotpro.png";
 
 const baseNavItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -22,9 +23,7 @@ const baseNavItems = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
 ];
 
-const officialOnlyNavItems = [
-  { name: "Planos", href: "/plans", icon: Crown },
-];
+const officialOnlyNavItems = [{ name: "Planos", href: "/plans", icon: Crown }];
 
 const bottomNavItems = [
   { name: "Configurações", href: "/settings", icon: Settings },
@@ -38,16 +37,6 @@ function normalizeEmail(value: unknown) {
 
 function getCurrentUserEmail() {
   if (typeof window === "undefined") return "";
-
-  /**
-   * CORREÇÃO IMPORTANTE:
-   * Antes o sistema procurava e-mail em várias chaves do localStorage.
-   * Isso fazia o menu Planos aparecer para contas de teste,
-   * porque o e-mail oficial podia estar salvo em algum dado antigo.
-   *
-   * Agora o menu Planos depende somente da chave oficial salva no login:
-   * socialpilot_user_email
-   */
   return normalizeEmail(localStorage.getItem(USER_EMAIL_KEY));
 }
 
@@ -66,11 +55,6 @@ export function Sidebar() {
   ];
 
   const handleLogout = () => {
-    /**
-     * CORREÇÃO:
-     * Remove também o e-mail salvo do usuário.
-     * Assim, quando outra conta entrar, ela não herda dados da conta anterior.
-     */
     localStorage.removeItem(USER_EMAIL_KEY);
     localStorage.removeItem(MASTER_ACCESS_KEY);
     sessionStorage.removeItem(USER_EMAIL_KEY);
@@ -85,14 +69,16 @@ export function Sidebar() {
         <div className="p-6">
           <Link
             href="/dashboard"
-            className="flex items-center gap-2 cursor-pointer group"
+            className="flex items-center gap-3 cursor-pointer group"
           >
-            <div className="w-8 h-8 rounded bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground font-bold">
-              SP
-            </div>
+            <img
+              src={OFFICIAL_LOGO_PATH}
+              alt="Logo oficial do Social Pilot PRO"
+              className="h-10 w-10 rounded-lg object-cover shadow-sm"
+            />
 
             <span className="font-bold text-lg tracking-tight group-hover:text-sidebar-primary transition-colors">
-              SocialPilot Pro
+              Social Pilot PRO
             </span>
           </Link>
         </div>
