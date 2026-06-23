@@ -1,31 +1,30 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl =
+const SUPABASE_URL =
   process.env.SUPABASE_URL ||
   process.env.VITE_SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL;
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  "";
 
-const serviceRoleKey =
+const SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE;
+  process.env.SUPABASE_SERVICE_ROLE ||
+  "";
 
-const officialEmail =
+const OFFICIAL_EMAIL =
   process.env.MASTER_OFFICIAL_EMAIL || "socialpilotpro.oficial@gmail.com";
 
 const FREE_PLAN_POST_LIMIT = 3;
 
-function sendJson(
-  res: VercelResponse,
-  status: number,
-  body: Record<string, unknown>
-) {
-  return res.status(status).json(body);
-}
-
 function normalizeEmail(value: unknown) {
   return String(value || "").trim().toLowerCase();
+}
+
+function send(res: VercelResponse, status: number, body: Record<string, unknown>) {
+  res.setHeader("Content-Type", "application/json");
+  return res.status(status).json(body);
 }
 
 function getBody(req: VercelRequest) {
@@ -40,18 +39,18 @@ function getBody(req: VercelRequest) {
   return req.body || {};
 }
 
-function getBearerToken(req: VercelRequest) {
+function getToken(req: VercelRequest) {
   const authorization = String(req.headers.authorization || "");
-  const parts = authorization.split(" ");
+  const [type, token] = authorization.split(" ");
 
-  if (parts[0]?.toLowerCase() !== "bearer" || !parts[1]) {
+  if (type?.toLowerCase() !== "bearer" || !token) {
     return "";
   }
 
-  return parts[1];
+  return token;
 }
 
-function getPayload(action: string) {
+function getUpdatePayload(action: string) {
   if (action === "activate_premium") {
     return {
       plan: "premium",
@@ -99,33 +98,31 @@ function getPayload(action: string) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    res.setHeader("Content-Type", "application/json");
-
     if (req.method !== "POST") {
-      return sendJson(res, 405, {
+      return send(res, 405, {
         ok: false,
         error: "Método não permitido.",
       });
     }
 
-    if (!supabaseUrl) {
-      return sendJson(res, 500, {
+    if (!SUPABASE_URL) {
+      return send(res, 500, {
         ok: false,
-        error: "SUPABASE_URL ou VITE_SUPABASE_URL não está configurado.",
+        error: "SUPABASE_URL/VITE_SUPABASE_URL não configurado no Vercel.",
       });
     }
 
-    if (!serviceRoleKey) {
-      return sendJson(res, 500, {
+    if (!SERVICE_ROLE_KEY) {
+      return send(res, 500, {
         ok: false,
-        error: "SUPABASE_SERVICE_ROLE_KEY não está configurado no Vercel.",
+        error: "SUPABASE_SERVICE_ROLE_KEY não configurado no Vercel.",
       });
     }
 
-    const token = getBearerToken(req);
+    const token = getToken(req);
 
     if (!token) {
-      return sendJson(res, 401, {
+      return send(res, 401, {
         ok: false,
         error: "Sessão inválida ou expirada.",
       });
@@ -136,22 +133,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const action = String(body.action || "").trim();
 
     if (!companyId) {
-      return sendJson(res, 400, {
+      return send(res, 400, {
         ok: false,
         error: "companyId é obrigatório.",
       });
     }
 
-    const payload = getPayload(action);
+    const payload = getUpdatePayload(action);
 
     if (!payload) {
-      return sendJson(res, 400, {
+      return send(res, 400, {
         ok: false,
         error: "Ação inválida.",
       });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -164,47 +161,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } = await supabaseAdmin.auth.getUser(token);
 
     if (userError || !user) {
-      return sendJson(res, 401, {
+      return send(res, 401, {
         ok: false,
         error: "Sessão inválida ou expirada.",
         detail: userError?.message || null,
       });
     }
 
-    if (normalizeEmail(user.email) !== normalizeEmail(officialEmail)) {
-      return sendJson(res, 403, {
+    if (normalizeEmail(user.email) !== normalizeEmail(OFFICIAL_EMAIL)) {
+      return send(res, 403, {
         ok: false,
         error: "Somente a conta oficial pode alterar empresas.",
         loggedEmail: user.email || null,
-        officialEmail,
+        officialEmail: OFFICIAL_EMAIL,
       });
     }
 
-    const { data: company, error: companyError } = await supabaseAdmin
+    const { data: company, error: findError } = await supabaseAdmin
       .from("companies")
       .select("id,email")
       .eq("id", companyId)
       .maybeSingle();
 
-    if (companyError) {
-      return sendJson(res, 500, {
+    if (findError) {
+      return send(res, 500, {
         ok: false,
-        error: companyError.message,
+        error: findError.message,
+        code: findError.code || null,
       });
     }
 
     if (!company) {
-      return sendJson(res, 404, {
+      return send(res, 404, {
         ok: false,
         error: "Empresa não encontrada.",
       });
     }
 
     if (
-      normalizeEmail(company.email) === normalizeEmail(officialEmail) &&
+      normalizeEmail(company.email) === normalizeEmail(OFFICIAL_EMAIL) &&
       (action === "cancel_premium" || action === "block")
     ) {
-      return sendJson(res, 403, {
+      return send(res, 403, {
         ok: false,
         error: "A conta oficial não pode ser bloqueada nem voltar ao gratuito.",
       });
@@ -219,26 +217,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .eq("id", companyId);
 
     if (updateError) {
-      return sendJson(res, 500, {
+      return send(res, 500, {
         ok: false,
         error: updateError.message,
         code: updateError.code || null,
       });
     }
 
-    return sendJson(res, 200, {
+    return send(res, 200, {
       ok: true,
       action,
       companyId,
       message: "Empresa atualizada com sucesso.",
     });
   } catch (error: any) {
-    console.error("update-company fatal error:", error);
-
-    return sendJson(res, 500, {
+    return send(res, 500, {
       ok: false,
       error: error?.message || "Erro interno ao atualizar empresa.",
-      stack: process.env.NODE_ENV === "development" ? error?.stack : undefined,
     });
   }
 }
