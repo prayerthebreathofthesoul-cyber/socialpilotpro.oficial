@@ -120,6 +120,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  if (Object.keys(cleanPayload).length === 0) {
+    return json(res, 400, {
+      error: "Nenhum campo permitido foi enviado para atualização.",
+    });
+  }
+
   cleanPayload.updated_at = new Date().toISOString();
 
   const { data, error } = await supabaseAdmin
