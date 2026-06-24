@@ -11,6 +11,15 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+type CompanyAccess = {
+  id?: string;
+  plan?: string | null;
+  plan_status?: string | null;
+  status?: string | null;
+  is_blocked?: boolean | null;
+  free_expires_at?: string | null;
+};
+
 async function getCurrentUserEmail() {
   const {
     data: { user },
@@ -19,12 +28,45 @@ async function getCurrentUserEmail() {
   return user?.email || getLoggedUserEmail();
 }
 
-async function checkCompanyBlocked(email: string) {
+function isFreeTrialExpired(company?: CompanyAccess | null) {
+  if (!company || company.plan !== "free" || !company.free_expires_at) {
+    return false;
+  }
+
+  const expiresAt = new Date(company.free_expires_at);
+
+  if (Number.isNaN(expiresAt.getTime())) {
+    return false;
+  }
+
+  return expiresAt.getTime() <= Date.now();
+}
+
+async function blockExpiredFreeCompany(company: CompanyAccess, email: string) {
+  const payload = {
+    plan_status: "blocked",
+    status: "blocked",
+    is_blocked: true,
+  };
+
+  const { error } = company.id
+    ? await supabase.from("companies").update(payload).eq("id", company.id)
+    : await supabase.from("companies").update(payload).eq("email", email);
+
+  if (error) {
+    console.warn(
+      "O acesso gratuito venceu, mas o Supabase não permitiu salvar o bloqueio:",
+      error
+    );
+  }
+}
+
+async function checkCompanyAccess(email: string) {
   const cleanEmail = email.trim().toLowerCase();
 
   const { data, error } = await supabase
     .from("companies")
-    .select("id, plan_status, status, is_blocked")
+    .select("id, plan, plan_status, status, is_blocked, free_expires_at")
     .eq("email", cleanEmail)
     .limit(1);
 
@@ -32,13 +74,33 @@ async function checkCompanyBlocked(email: string) {
     throw error;
   }
 
-  const company = data?.[0];
+  const company = data?.[0] as CompanyAccess | undefined;
 
-  return (
+  const alreadyBlocked =
     company?.is_blocked === true ||
     company?.plan_status === "blocked" ||
-    company?.status === "blocked"
-  );
+    company?.status === "blocked";
+
+  if (alreadyBlocked) {
+    return {
+      blocked: true,
+      reason: "blocked" as const,
+    };
+  }
+
+  if (isFreeTrialExpired(company)) {
+    await blockExpiredFreeCompany(company, cleanEmail);
+
+    return {
+      blocked: true,
+      reason: "free_expired" as const,
+    };
+  }
+
+  return {
+    blocked: false,
+    reason: null,
+  };
 }
 
 export function Layout({ children }: LayoutProps) {
@@ -66,13 +128,18 @@ export function Layout({ children }: LayoutProps) {
           return;
         }
 
-        const isBlocked = await checkCompanyBlocked(email);
+        const access = await checkCompanyAccess(email);
 
-        if (isBlocked) {
+        if (access.blocked) {
           await signOut();
 
           if (active) {
-            toast.error("Conta bloqueada. Entre em contato com o suporte.");
+            toast.error(
+              access.reason === "free_expired"
+                ? "Seu acesso gratuito de 3 dias expirou. Ative o Premium para continuar usando."
+                : "Conta bloqueada. Entre em contato com o suporte."
+            );
+
             setLocation("/login");
           }
 
