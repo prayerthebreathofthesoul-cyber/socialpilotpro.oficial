@@ -223,6 +223,9 @@ export default function Dashboard() {
     ? new Date(company.premium_expires_at)
     : null;
 
+  const hasValidPremiumExpiration =
+    premiumExpiresAt instanceof Date && !Number.isNaN(premiumExpiresAt.getTime());
+
   const premiumDaysLeft = premiumExpiresAt
     ? Math.max(
         0,
@@ -233,10 +236,14 @@ export default function Dashboard() {
       )
     : null;
 
-  const isPremiumActive =
-    company?.plan === "premium" &&
-    premiumExpiresAt &&
-    premiumExpiresAt.getTime() > Date.now();
+  const isPremiumPlan = company?.plan === "premium";
+
+  const isPremiumExpired =
+    isPremiumPlan &&
+    hasValidPremiumExpiration &&
+    premiumExpiresAt.getTime() <= Date.now();
+
+  const shouldShowPremiumCard = isPremiumPlan && !isPremiumExpired;
 
   const isAccountConnected = (platform: string) => {
     return socialAccounts.some(
@@ -598,8 +605,8 @@ export default function Dashboard() {
               Bem-vindo de volta! Aqui está o resumo da sua conta.
             </p>
 
-            {isPremiumActive && premiumExpiresAt && (
-              <div className="mt-6 rounded-xl border border-orange-200 bg-orange-50 p-5 text-orange-950 shadow-sm">
+            {shouldShowPremiumCard && (
+              <div className="mt-6 rounded-xl border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-yellow-50 p-5 text-orange-950 shadow-sm">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-700">
                     <Crown className="h-5 w-5" />
@@ -607,24 +614,31 @@ export default function Dashboard() {
 
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-wide">
-                      Plano Premium ativo
+                      Plano Premium ativado
                     </p>
 
                     <h2 className="mt-1 text-xl font-bold">
-                      Você está usufruindo do plano Premium por mais{" "}
-                      {premiumDaysLeft} dias.
+                      {hasValidPremiumExpiration && premiumDaysLeft !== null
+                        ? `Seu plano Premium está ativo por mais ${premiumDaysLeft} dias.`
+                        : "Seu plano Premium está ativo."}
                     </h2>
 
                     <p className="mt-1 text-sm">
-                      Expira em{" "}
-                      <strong>
-                        {premiumExpiresAt.toLocaleDateString("pt-BR")} às{" "}
-                        {premiumExpiresAt.toLocaleTimeString("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </strong>
-                      .
+                      {hasValidPremiumExpiration && premiumExpiresAt ? (
+                        <>
+                          Expira em{" "}
+                          <strong>
+                            {premiumExpiresAt.toLocaleDateString("pt-BR")} às{" "}
+                            {premiumExpiresAt.toLocaleTimeString("pt-BR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </strong>
+                          .
+                        </>
+                      ) : (
+                        "A data de expiração ainda não foi definida. Reative o Premium pelo painel Master para gerar a validade automaticamente."
+                      )}
                     </p>
                   </div>
                 </div>
