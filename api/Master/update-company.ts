@@ -9,6 +9,7 @@ type MasterAction =
   | "reset_usage";
 
 const FREE_PLAN_POST_LIMIT = 3;
+const PREMIUM_DURATION_DAYS = 30;
 
 const supabaseUrl =
   process.env.SUPABASE_URL ||
@@ -53,47 +54,52 @@ function isMissingColumnError(error: any) {
     message.includes("schema cache")
   );
 }
+function getPremiumExpirationDates() {
+  const startedAt = new Date();
+  const expiresAt = new Date(startedAt);
+  expiresAt.setDate(expiresAt.getDate() + PREMIUM_DURATION_DAYS);
+
+  return {
+    premium_started_at: startedAt.toISOString(),
+    premium_expires_at: expiresAt.toISOString(),
+  };
+}
 
 function getActionPayloads(action: MasterAction) {
   if (action === "activate_premium") {
-    return [
-      {
-        plan: "premium",
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-        posts_limit: null,
-      },
-      {
-        plan: "premium",
-        plan_status: "active",
-        posts_limit: null,
-      },
-      {
-        plan: "premium",
-      },
-    ];
-  }
+  const premiumDates = getPremiumExpirationDates();
+
+  return [
+    {
+      plan: "premium",
+      plan_status: "active",
+      status: "active",
+      is_blocked: false,
+      posts_limit: null,
+      ...premiumDates,
+    },
+    {
+      plan: "premium",
+      plan_status: "active",
+      posts_limit: null,
+    },
+    {
+      plan: "premium",
+    },
+  ];
+}
 
   if (action === "cancel_premium") {
     return [
       {
-        plan: "free",
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-        posts_limit: FREE_PLAN_POST_LIMIT,
-      },
-      {
-        plan: "free",
-        plan_status: "active",
-        posts_limit: FREE_PLAN_POST_LIMIT,
-      },
-      {
-        plan: "free",
-      },
-    ];
-  }
+  plan: "free",
+  plan_status: "active",
+  status: "active",
+  is_blocked: false,
+  posts_limit: FREE_PLAN_POST_LIMIT,
+  premium_started_at: null,
+  premium_expires_at: null,
+},
 
   if (action === "block") {
     return [
