@@ -4,6 +4,7 @@ import { useLocation, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signUpWithEmail } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,6 +35,7 @@ import {
 const USER_EMAIL_KEY = "socialpilot_user_email";
 const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const FREE_PLAN_POST_LIMIT = 3;
+const FREE_TRIAL_DAYS = 3;
 
 const registerSchema = z
   .object({
@@ -79,6 +81,57 @@ const registerHighlights = [
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
+}
+
+function getFreeTrialDates() {
+  const startedAt = new Date();
+  const expiresAt = new Date(startedAt);
+
+  expiresAt.setDate(expiresAt.getDate() + FREE_TRIAL_DAYS);
+
+  return {
+    free_started_at: startedAt.toISOString(),
+    free_expires_at: expiresAt.toISOString(),
+  };
+}
+
+async function saveFreeTrialDates(
+  email: string,
+  name: string,
+  trialDates: ReturnType<typeof getFreeTrialDates>
+) {
+  const payload = {
+    name,
+    email,
+    plan: "free",
+    plan_status: "active",
+    status: "active",
+    is_blocked: false,
+    posts_used: 0,
+    posts_limit: FREE_PLAN_POST_LIMIT,
+    ...trialDates,
+  };
+
+  const { data: updatedRows, error: updateError } = await supabase
+    .from("companies")
+    .update(payload)
+    .eq("email", email)
+    .select("id");
+
+  if (!updateError && Array.isArray(updatedRows) && updatedRows.length > 0) {
+    return trialDates;
+  }
+
+  const { error: insertError } = await supabase.from("companies").insert(payload);
+
+  if (insertError) {
+    console.warn("Não foi possível salvar o prazo gratuito na tabela companies:", {
+      updateError,
+      insertError,
+    });
+  }
+
+  return trialDates;
 }
 
 export default function Register() {
@@ -131,6 +184,7 @@ export default function Register() {
     try {
       const cleanEmail = normalizeEmail(values.email);
       const cleanName = values.name.trim();
+      const trialDates = getFreeTrialDates();
 
       await signUpWithEmail(cleanEmail, values.password, {
         name: cleanName,
@@ -139,7 +193,13 @@ export default function Register() {
         planStatus: "active",
         postsUsed: 0,
         postsLimit: FREE_PLAN_POST_LIMIT,
+        freeStartedAt: trialDates.free_started_at,
+        freeExpiresAt: trialDates.free_expires_at,
+        free_started_at: trialDates.free_started_at,
+        free_expires_at: trialDates.free_expires_at,
       } as any);
+
+      await saveFreeTrialDates(cleanEmail, cleanName, trialDates);
 
       localStorage.setItem(USER_EMAIL_KEY, cleanEmail);
       localStorage.removeItem(MASTER_ACCESS_KEY);
