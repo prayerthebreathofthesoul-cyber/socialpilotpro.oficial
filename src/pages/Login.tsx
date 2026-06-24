@@ -32,6 +32,8 @@ import {
   UserPlus,
 } from "lucide-react";
 
+const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
+
 const loginSchema = z.object({
   email: z
     .string()
@@ -69,6 +71,10 @@ type CompanyAccess = {
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
+}
+
+function isOfficialEmail(email: string) {
+  return normalizeEmail(email) === OFFICIAL_EMAIL;
 }
 
 async function syncExpiredFreeCompanies() {
@@ -115,6 +121,13 @@ async function blockExpiredFreeCompany(company: CompanyAccess, email: string) {
 async function checkCompanyBlocked(email: string) {
   const cleanEmail = normalizeEmail(email);
 
+  if (isOfficialEmail(cleanEmail)) {
+    return {
+      blocked: false,
+      reason: null,
+    };
+  }
+
   await syncExpiredFreeCompanies();
 
   const { data, error } = await supabase
@@ -129,6 +142,15 @@ async function checkCompanyBlocked(email: string) {
 
   const company = data?.[0] as CompanyAccess | undefined;
 
+  if (isFreeTrialExpired(company)) {
+    await blockExpiredFreeCompany(company, cleanEmail);
+
+    return {
+      blocked: true,
+      reason: "free_expired" as const,
+    };
+  }
+
   const alreadyBlocked =
     company?.is_blocked === true ||
     company?.plan_status === "blocked" ||
@@ -138,15 +160,6 @@ async function checkCompanyBlocked(email: string) {
     return {
       blocked: true,
       reason: "blocked" as const,
-    };
-  }
-
-  if (isFreeTrialExpired(company)) {
-    await blockExpiredFreeCompany(company, cleanEmail);
-
-    return {
-      blocked: true,
-      reason: "free_expired" as const,
     };
   }
 
