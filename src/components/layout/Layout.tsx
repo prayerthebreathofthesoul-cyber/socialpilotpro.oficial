@@ -42,6 +42,14 @@ function isFreeTrialExpired(company?: CompanyAccess | null) {
   return expiresAt.getTime() <= Date.now();
 }
 
+async function syncExpiredFreeCompanies() {
+  const { error } = await supabase.rpc("block_expired_free_companies");
+
+  if (error) {
+    console.warn("Não foi possível sincronizar contas gratuitas vencidas:", error);
+  }
+}
+
 async function blockExpiredFreeCompany(company: CompanyAccess, email: string) {
   const payload = {
     plan_status: "blocked",
@@ -63,6 +71,8 @@ async function blockExpiredFreeCompany(company: CompanyAccess, email: string) {
 
 async function checkCompanyAccess(email: string) {
   const cleanEmail = email.trim().toLowerCase();
+
+  await syncExpiredFreeCompanies();
 
   const { data, error } = await supabase
     .from("companies")
