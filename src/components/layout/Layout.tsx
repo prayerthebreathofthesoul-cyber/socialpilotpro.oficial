@@ -11,6 +11,8 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
+
 type CompanyAccess = {
   id?: string;
   plan?: string | null;
@@ -26,6 +28,14 @@ async function getCurrentUserEmail() {
   } = await supabase.auth.getUser();
 
   return user?.email || getLoggedUserEmail();
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isOfficialEmail(email: string) {
+  return normalizeEmail(email) === OFFICIAL_EMAIL;
 }
 
 function isFreeTrialExpired(company?: CompanyAccess | null) {
@@ -70,7 +80,14 @@ async function blockExpiredFreeCompany(company: CompanyAccess, email: string) {
 }
 
 async function checkCompanyAccess(email: string) {
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanEmail = normalizeEmail(email);
+
+  if (isOfficialEmail(cleanEmail)) {
+    return {
+      blocked: false,
+      reason: null,
+    };
+  }
 
   await syncExpiredFreeCompanies();
 
@@ -86,6 +103,15 @@ async function checkCompanyAccess(email: string) {
 
   const company = data?.[0] as CompanyAccess | undefined;
 
+  if (isFreeTrialExpired(company)) {
+    await blockExpiredFreeCompany(company, cleanEmail);
+
+    return {
+      blocked: true,
+      reason: "free_expired" as const,
+    };
+  }
+
   const alreadyBlocked =
     company?.is_blocked === true ||
     company?.plan_status === "blocked" ||
@@ -95,15 +121,6 @@ async function checkCompanyAccess(email: string) {
     return {
       blocked: true,
       reason: "blocked" as const,
-    };
-  }
-
-  if (isFreeTrialExpired(company)) {
-    await blockExpiredFreeCompany(company, cleanEmail);
-
-    return {
-      blocked: true,
-      reason: "free_expired" as const,
     };
   }
 
