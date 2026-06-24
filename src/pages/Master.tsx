@@ -35,6 +35,7 @@ const MASTER_ACCESS_KEY = "socialpilot_master_access";
 const MASTER_PASSWORD = "admin123";
 const OFFICIAL_EMAIL = "socialpilotpro.oficial@gmail.com";
 const FREE_PLAN_POST_LIMIT = 3;
+const PREMIUM_DURATION_DAYS = 30;
 
 type MasterAction =
   | "activate_premium"
@@ -298,37 +299,52 @@ function getStorePatchFromCompany(company: any): Partial<MasterStore> {
     postsUsed: toNumber(company?.posts_used ?? company?.postsUsed, 0),
   };
 }
+function getPremiumExpirationDates() {
+  const startedAt = new Date();
+  const expiresAt = new Date(startedAt);
+  expiresAt.setDate(expiresAt.getDate() + PREMIUM_DURATION_DAYS);
+
+  return {
+    premium_started_at: startedAt.toISOString(),
+    premium_expires_at: expiresAt.toISOString(),
+  };
+}
 
 function getMasterActionPayloads(action: MasterAction) {
   if (action === "activate_premium") {
-    return [
-      {
-        plan: "premium",
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-        posts_limit: null,
-      },
-      {
-        plan: "premium",
-        plan_status: "active",
-        posts_limit: null,
-      },
-      {
-        plan: "premium",
-      },
-    ];
-  }
+  const premiumDates = getPremiumExpirationDates();
+
+  return [
+    {
+      plan: "premium",
+      plan_status: "active",
+      status: "active",
+      is_blocked: false,
+      posts_limit: null,
+      ...premiumDates,
+    },
+    {
+      plan: "premium",
+      plan_status: "active",
+      posts_limit: null,
+    },
+    {
+      plan: "premium",
+    },
+  ];
+}
 
   if (action === "cancel_premium") {
     return [
       {
-        plan: "free",
-        plan_status: "active",
-        status: "active",
-        is_blocked: false,
-        posts_limit: FREE_PLAN_POST_LIMIT,
-      },
+  plan: "free",
+  plan_status: "active",
+  status: "active",
+  is_blocked: false,
+  posts_limit: FREE_PLAN_POST_LIMIT,
+  premium_started_at: null,
+  premium_expires_at: null,
+},
       {
         plan: "free",
         plan_status: "active",
