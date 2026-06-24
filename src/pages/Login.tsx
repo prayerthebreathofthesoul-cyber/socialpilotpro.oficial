@@ -71,6 +71,14 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
+async function syncExpiredFreeCompanies() {
+  const { error } = await supabase.rpc("block_expired_free_companies");
+
+  if (error) {
+    console.warn("Não foi possível sincronizar contas gratuitas vencidas:", error);
+  }
+}
+
 function isFreeTrialExpired(company?: CompanyAccess | null) {
   if (!company || company.plan !== "free" || !company.free_expires_at) {
     return false;
@@ -106,6 +114,8 @@ async function blockExpiredFreeCompany(company: CompanyAccess, email: string) {
 
 async function checkCompanyBlocked(email: string) {
   const cleanEmail = normalizeEmail(email);
+
+  await syncExpiredFreeCompanies();
 
   const { data, error } = await supabase
     .from("companies")
