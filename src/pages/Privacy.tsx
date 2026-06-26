@@ -41,9 +41,9 @@ export default function Privacy() {
             <strong>E-mail:</strong>{" "}
             <a
               className="text-blue-600 underline"
-              href="mailto:viverderenda1956@gmail.com"
+              href="mailto:socialpilotpro.oficial@gmail.com"
             >
-              viverderenda1956@gmail.com
+              socialpilotpro.oficial@gmail.com
             </a>
           </p>
 
@@ -297,9 +297,9 @@ export default function Privacy() {
             Para exercer seus direitos, envie uma solicitação para:{" "}
             <a
               className="text-blue-600 underline"
-              href="mailto:viverderenda1956@gmail.com"
+              href="mailto:socialpilotpro.oficial@gmail.com"
             >
-              viverderenda1956@gmail.com
+              socialpilotpro.oficial@gmail.com
             </a>
           </p>
 
@@ -328,9 +328,9 @@ export default function Privacy() {
             enviando e-mail para:{" "}
             <a
               className="text-blue-600 underline"
-              href="mailto:viverderenda1956@gmail.com"
+              href="mailto:socialpilotpro.oficial@gmail.com"
             >
-              viverderenda1956@gmail.com
+              socialpilotpro.oficial@gmail.com
             </a>
           </p>
 
@@ -387,9 +387,9 @@ export default function Privacy() {
             E-mail:{" "}
             <a
               className="text-blue-600 underline"
-              href="mailto:viverderenda1956@gmail.com"
+              href="mailto:socialpilotpro.oficial@gmail.com"
             >
-              viverderenda1956@gmail.com
+              socialpilotpro.oficial@gmail.com
             </a>
           </p>
 
