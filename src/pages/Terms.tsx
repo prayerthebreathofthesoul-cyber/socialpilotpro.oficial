@@ -370,9 +370,9 @@ export default function Terms() {
             E-mail:{" "}
             <a
               className="text-blue-600 underline"
-              href="mailto:viverderenda1956@gmail.com"
+              href="mailto:socialpilotpro.oficial@gmail.com"
             >
-              viverderenda1956@gmail.com
+              socialpilotpro.oficial@gmail.com
             </a>
           </p>
 
