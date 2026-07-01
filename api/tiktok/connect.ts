@@ -107,6 +107,12 @@ function getBearerToken(req: VercelRequest) {
   return token.trim();
 }
 
+function isSafeUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
 async function getAuthenticatedUser(
   supabaseUrl: string,
   anonKey: string,
@@ -128,26 +134,84 @@ async function getAuthenticatedUser(
   return result.data;
 }
 
-function getCompanyId(req: VercelRequest, userId: string) {
-  const queryCompanyId = String(req.query.company_id || "").trim();
+async function getCompanyIdFromProfile(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string
+) {
+  const url =
+    `${supabaseUrl}/rest/v1/profiles` +
+    `?select=id,user_id,company_id,email,role` +
+    `&user_id=eq.${encodeURIComponent(userId)}` +
+    `&limit=1`;
 
-  if (queryCompanyId) {
-    return queryCompanyId;
+  const result = await requestJson(url, {
+    method: "GET",
+    headers: supabaseHeaders(serviceRoleKey),
+    timeoutMs: 10000,
+  });
+
+  if (!result.ok) {
+    console.error("Erro ao buscar profile:", result.status, result.text);
+    return null;
   }
 
-  return userId;
+  const profile = Array.isArray(result.data) ? result.data[0] : null;
+
+  if (!profile?.company_id) {
+    return null;
+  }
+
+  return String(profile.company_id);
 }
 
-function isSafeId(value: string) {
-  return /^[a-zA-Z0-9._:-]{1,128}$/.test(value);
+async function validateCompany(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  companyId: string
+) {
+  const url =
+    `${supabaseUrl}/rest/v1/companies` +
+    `?select=id,email,plan,plan_status,status,is_blocked` +
+    `&id=eq.${encodeURIComponent(companyId)}` +
+    `&limit=1`;
+
+  const result = await requestJson(url, {
+    method: "GET",
+    headers: supabaseHeaders(serviceRoleKey),
+    timeoutMs: 10000,
+  });
+
+  if (!result.ok) {
+    console.error("Erro ao validar empresa:", result.status, result.text);
+    return null;
+  }
+
+  const company = Array.isArray(result.data) ? result.data[0] : null;
+
+  if (!company?.id) {
+    return null;
+  }
+
+  if (
+    company.is_blocked === true ||
+    company.status !== "active" ||
+    company.plan_status !== "active"
+  ) {
+    return null;
+  }
+
+  return company;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");
 
-  if (req.method !== "GET") {
-    res.setHeader("Allow", "GET");
-    return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({
+      error: "Method not allowed. Use POST from the authenticated app.",
+    });
   }
 
   try {
@@ -190,14 +254,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accessToken
     );
 
-    if (!user) {
+    if (!user?.id) {
       return res.status(401).json({ error: "Invalid session" });
     }
 
-    const companyId = getCompanyId(req, String(user.id));
+    const companyId = await getCompanyIdFromProfile(
+      supabaseUrl,
+      serviceRoleKey,
+      String(user.id)
+    );
 
-    if (!isSafeId(companyId)) {
-      return res.status(400).json({ error: "Invalid company_id" });
+    if (!companyId || !isSafeUuid(companyId)) {
+      return res.status(403).json({ error: "Company not found for user" });
+    }
+
+    const company = await validateCompany(
+      supabaseUrl,
+      serviceRoleKey,
+      companyId
+    );
+
+    if (!company) {
+      return res.status(403).json({
+        error: "Company inactive, blocked or not found",
+      });
     }
 
     const state = createOAuthState();
@@ -219,7 +299,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!insertResult.ok) {
-      console.error("Erro ao salvar state TikTok:", insertResult.status);
+      console.error(
+        "Erro ao salvar state TikTok:",
+        insertResult.status,
+        insertResult.text
+      );
+
       return res.status(500).json({ error: "Could not create OAuth state" });
     }
 
@@ -240,6 +325,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error("Erro ao iniciar conexão com o TikTok:", error?.message);
-    return res.status(500).json({ error: "Could not start TikTok connection" });
+
+    return res.status(500).json({
+      error: "Could not start TikTok connection",
+    });
   }
 }
