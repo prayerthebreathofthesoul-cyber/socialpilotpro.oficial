@@ -382,6 +382,7 @@ export default function Settings() {
 
       if (userError || !user) {
         toast.error("Usuário não autenticado.");
+        setIsConnectingMeta(false);
         return;
       }
 
@@ -423,40 +424,69 @@ export default function Settings() {
     setIsConnectingTiktok(true);
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const { data, error: sessionError } = await supabase.auth.getSession();
 
-      if (userError || !user) {
-        toast.error("Usuário não autenticado.");
+      if (sessionError || !data.session?.access_token) {
+        toast.error(
+          "Sessão expirada. Saia da conta, entre novamente e tente conectar o TikTok."
+        );
+        setIsConnectingTiktok(false);
         return;
       }
 
-      const state =
-        crypto.randomUUID?.() ||
-        `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-      const { error } = await supabase.from("tiktok_oauth_states").insert({
-        state,
-        company_id: company.id,
-        user_id: user.id,
-        expires_at: expiresAt,
+      const response = await fetch("/api/tiktok/connect", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${data.session.access_token}`,
+          "Content-Type": "application/json",
+        },
       });
 
-      if (error) {
-        throw error;
+      const result = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const errorMessages: Record<string, string> = {
+          "Authentication required":
+            "Sessão não enviada para a API. Faça login novamente e tente outra vez.",
+          "Invalid session": "Sessão inválida ou expirada. Faça login novamente.",
+          "Company not found for user":
+            "Empresa não encontrada para este usuário.",
+          "Company inactive, blocked or not found":
+            "Empresa inativa, bloqueada ou não encontrada.",
+          "TikTok config missing":
+            "Configuração do TikTok ausente nas variáveis de ambiente.",
+          "Supabase config missing":
+            "Configuração do Supabase ausente nas variáveis de ambiente.",
+          "Could not create OAuth state":
+            "Não foi possível criar a autorização do TikTok. Tente novamente.",
+          "Could not start TikTok connection":
+            "Não foi possível iniciar a conexão com o TikTok.",
+        };
+
+        toast.error(
+          errorMessages[result.error || ""] ||
+            result.error ||
+            "Não foi possível iniciar a conexão com o TikTok."
+        );
+
+        setIsConnectingTiktok(false);
+        return;
       }
 
-      window.location.href = `/api/tiktok/connect?state=${encodeURIComponent(
-        state
-      )}`;
+      if (!result.url) {
+        toast.error("A API não retornou a URL de autorização do TikTok.");
+        setIsConnectingTiktok(false);
+        return;
+      }
+
+      window.location.href = result.url;
     } catch (error: any) {
-      console.error(error);
+      console.error("Erro ao conectar TikTok:", error);
       toast.error(
-        error?.message || "Não foi possível iniciar a conexão com o TikTok."
+        error?.message || "Erro inesperado ao iniciar conexão com o TikTok."
       );
       setIsConnectingTiktok(false);
     }
